@@ -1,0 +1,5 @@
+flask
+openai
+tqdm
+python-dotenv
+supabase
