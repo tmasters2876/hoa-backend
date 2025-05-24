@@ -15,13 +15,17 @@ supabase = create_client(supabase_url, supabase_key)
 def format_clauses_for_prompt(clauses):
     formatted = []
     for idx, clause in enumerate(clauses[:5], 1):
+        citation = clause.get("citation", "Clause")
+        link = clause.get("link", "#")
+        summary = clause.get("summary", "No summary provided.")
+
         entry = (
-            f"{idx}. [{clause['citation']}]({clause['link']})\n"
-            f"Summary: {clause['summary']}\n"
-            f"Text: {clause['original_text']}\n"
+            f"{idx}. **[{citation}]({link})**\n"
+            f"_Summary_: {summary}\n"
         )
         formatted.append(entry)
     return "\n".join(formatted)
+
 
 # GPT prompt template
 def build_gpt_prompt(question, clause_text):
