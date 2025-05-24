@@ -65,7 +65,7 @@ Final Answer:
 
 
 # Call embedding + Supabase vector match
-    def fetch_matching_clauses(question, tags=["landscaping"]):
+def fetch_matching_clauses(question, tags=["landscaping"]):
         # Try vector match first
         embedding_response = client.embeddings.create(
             input=[question],
