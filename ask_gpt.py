@@ -76,9 +76,9 @@ def fetch_matching_clauses(question, tags=["landscaping"]):
         response = supabase.rpc("match_clauses", {
             "query_embedding": query_embedding,
             "match_threshold": 0.60,
-            "match_count": 5,
-            "tags_filter": tags or []
+            "match_count": 5
         }).execute()
+
 
 
         if not response.data:
