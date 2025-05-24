@@ -1,4 +1,5 @@
 import os
+import re
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
@@ -12,19 +13,33 @@ supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
 # Format top N clause matches for GPT prompt
-def format_clauses_for_prompt(clauses):
-    formatted = []
-    for idx, clause in enumerate(clauses[:5], 1):
-        citation = clause.get("citation", "Clause")
-        link = clause.get("link", "#")
-        summary = clause.get("summary", "No summary provided.")
+    def format_clauses_for_prompt(clauses):
+        """
+        Build markdown-formatted text for up to 5 clauses.
+        Each entry contains:
+          • Clickable citation
+          • Plain-English summary
+          • Reviewer line with clause_id, document, and page
+        """
+        formatted = []
+        for idx, c in enumerate(clauses[:5], 1):
+            citation = c.get("citation", "Clause")
+            link     = c.get("link",   "#")
+            summary  = c.get("summary","No summary provided.")
+            cid      = c.get("clause_id")
+            doc      = c.get("document","")
+            # Quick page scrape (looks for “Pg 12” or “Page 12” etc.)
+            pg_match = re.search(r"(?:Pg|Page)[\s ]*([0-9\-]+)", citation, re.I)
+            page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
 
-        entry = (
-            f"{idx}. **[{citation}]({link})**\n"
-            f"_Summary_: {summary}\n"
-        )
-        formatted.append(entry)
-    return "\n".join(formatted)
+            entry = (
+                f"{idx}. **[{citation}]({link})**\n"
+                f"_Summary_: {summary}\n"
+                f"_Reviewer_: ID {cid} • Doc “{doc}” • {page_str}\n"
+            )
+            formatted.append(entry)
+        return "\n".join(formatted)
+
 
 
 # GPT prompt template
