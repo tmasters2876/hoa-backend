@@ -65,7 +65,7 @@ Final Answer:
 
 
 # Call embedding + Supabase vector match
-def fetch_matching_clauses(question):
+    def fetch_matching_clauses(question, tags=["landscaping"]):
         # Try vector match first
         embedding_response = client.embeddings.create(
             input=[question],
@@ -76,23 +76,34 @@ def fetch_matching_clauses(question):
         response = supabase.rpc("match_clauses", {
             "query_embedding": query_embedding,
             "match_threshold": 0.60,
-            "match_count": 5
+            "match_count": 5,
+            "tags_filter": tags or []
         }).execute()
 
-        if response.data:
-            return response.data
 
-        # If no matches, try fallback keyword filter (by summary/tags)
-        fallback = (
-            supabase
-            .from_("clauses")
-            .select("*")
-            .ilike("summary", f"%{question}%")
-            .limit(5)
-            .execute()
-        )
+        if not response.data:
+            # Fallback to keyword search if no vector match
+            if tags:
+                fallback = (
+                    supabase
+                    .from_("clauses")
+                    .select("*")
+                    .contains("tags", tags)
+                    .ilike("summary", f"%{question}%")
+                    .limit(5)
+                    .execute()
+                )
+            else:
+                fallback = (
+                    supabase
+                    .from_("clauses")
+                    .select("*")
+                    .ilike("summary", f"%{question}%")
+                    .limit(5)
+                    .execute()
+                )
+            return fallback.data
 
-        return fallback.data or []
 
 
 # Main GPT answer logic
