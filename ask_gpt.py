@@ -53,7 +53,7 @@ def fetch_matching_clauses(question):
 
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
-        "match_threshold": 0.78,
+        "match_threshold": 0.70,
         "match_count": 5
     }).execute()
 
