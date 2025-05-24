@@ -14,33 +14,30 @@ supabase = create_client(supabase_url, supabase_key)
 
 # Format top N clause matches for GPT prompt
 def format_clauses_for_prompt(clauses):
-        """
-        Build markdown-formatted text for up to 5 clauses.
-        Each entry contains:
-          • Clickable citation
-          • Plain-English summary
-          • Reviewer line with clause_id, document, and page
-        """
-        formatted = []
-        for idx, c in enumerate(clauses[:5], 1):
-            citation = c.get("citation", "Clause")
-            link     = c.get("link",   "#")
-            summary  = c.get("summary","No summary provided.")
-            cid      = c.get("clause_id")
-            doc      = c.get("document","")
-            # Quick page scrape (looks for “Pg 12” or “Page 12” etc.)
-            pg_match = re.search(r"(?:Pg|Page)[\s ]*([0-9\-]+)", citation, re.I)
-            page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
+    """
+    Build markdown-formatted text for up to 5 clauses.
+    Each entry contains:
+      • Clickable citation
+      • Plain-English summary
+      • Reviewer line with clause_id, document, and page
+    """
+    formatted = []
+    for idx, c in enumerate(clauses[:5], 1):
+        citation = c.get("citation", "Clause")
+        link     = c.get("link", "#")
+        summary  = c.get("summary", "No summary provided.")
+        cid      = c.get("clause_id")
+        doc      = c.get("document", "")
+        pg_match = re.search(r"(?:Pg|Page)[\s]*([0-9\-]+)", citation, re.I)
+        page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
 
-            entry = (
-                f"{idx}. **[{citation}]({link})**\n"
-                f"_Summary_: {summary}\n"
-                f"_Reviewer_: ID {cid} • Doc “{doc}” • {page_str}\n"
-            )
-            formatted.append(entry)
-        return "\n".join(formatted)
-
-
+        entry = (
+            f"{idx}. **[{citation}]({link})**\n"
+            f"_Summary_: {summary}\n"
+            f"_Reviewer_: ID {cid} • Doc “{doc}” • {page_str}\n"
+        )
+        formatted.append(entry)
+    return "\n".join(formatted)
 
 # GPT prompt template
 def build_gpt_prompt(question, clause_text):
@@ -63,48 +60,47 @@ Use markdown for citations like: **[citation](link)**.
 Final Answer:
 """
 
-
 # Call embedding + Supabase vector match
 def fetch_matching_clauses(question, tags=None):
-        # Try vector match first
-        embedding_response = client.embeddings.create(
-            input=[question],
-            model="text-embedding-ada-002"
+    # Try vector match first
+    embedding_response = client.embeddings.create(
+        input=[question],
+        model="text-embedding-ada-002"
+    )
+    query_embedding = embedding_response.data[0].embedding
+
+    response = supabase.rpc("match_clauses", {
+        "query_embedding": query_embedding,
+        "match_threshold": 0.60,
+        "match_count": 5
+    }).execute()
+
+    if response.data:
+        return response.data
+
+    # Fallback to keyword search using tags
+    if tags:
+        fallback = (
+            supabase
+            .from_("clauses")
+            .select("*")
+            .contains("tags", tags)
+            .ilike("summary", f"%{question}%")
+            .limit(5)
+            .execute()
         )
-        query_embedding = embedding_response.data[0].embedding
+        return fallback.data
 
-        response = supabase.rpc("match_clauses", {
-            "query_embedding": query_embedding,
-            "match_threshold": 0.60,
-            "match_count": 5
-        }).execute()
-
-
-
-        if not response.data:
-            # Fallback to keyword search if no vector match
-            if tags:
-                fallback = (
-                    supabase
-                    .from_("clauses")
-                    .select("*")
-                    .contains("tags", tags)
-                    .ilike("summary", f"%{question}%")
-                    .limit(5)
-                    .execute()
-                )
-            else:
-                fallback = (
-                    supabase
-                    .from_("clauses")
-                    .select("*")
-                    .ilike("summary", f"%{question}%")
-                    .limit(5)
-                    .execute()
-                )
-            return fallback.data
-
-
+    # Final fallback: keyword-only search
+    fallback = (
+        supabase
+        .from_("clauses")
+        .select("*")
+        .ilike("summary", f"%{question}%")
+        .limit(5)
+        .execute()
+    )
+    return fallback.data
 
 # Main GPT answer logic
 def answer_question(question):
@@ -132,4 +128,3 @@ def answer_question(question):
     )
 
     return gpt_response.choices[0].message.content
-
