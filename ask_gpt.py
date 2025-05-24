@@ -50,17 +50,19 @@ You are an HOA policy assistant. Based on the provided clause data, answer the r
 Resident Question:
 {question}
 
-Relevant Clauses:
+Below are relevant clause matches:
 {clause_text}
 
-Instructions:
-- If any clauses clearly answer the question, explain the rule using plain English.
-- Cite specific articles using: **"[citation]"**
-- If no rule directly applies, say so clearly.
-- End with: “Let us know if you need help with forms or next steps.”
+Write your response in this format:
+1. Brief summary of each clause that might apply
+2. State whether the rules clearly answer the question
+3. If unclear, suggest checking with the ARC
+4. Always close with: “Let us know if you need help with forms or next steps!”
 
+Use markdown for citations like: **[citation](link)**.
 Final Answer:
 """
+
 
 # Call embedding + Supabase vector match
 def fetch_matching_clauses(question):
