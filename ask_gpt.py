@@ -66,22 +66,34 @@ Final Answer:
 
 # Call embedding + Supabase vector match
 def fetch_matching_clauses(question):
-    embedding_response = client.embeddings.create(
-        input=[question],
-        model="text-embedding-ada-002"
-    )
-    query_embedding = embedding_response.data[0].embedding
+        # Try vector match first
+        embedding_response = client.embeddings.create(
+            input=[question],
+            model="text-embedding-ada-002"
+        )
+        query_embedding = embedding_response.data[0].embedding
 
-    response = supabase.rpc("match_clauses", {
-        "query_embedding": query_embedding,
-        "match_threshold": 0.60,
-        "match_count": 5
-    }).execute()
+        response = supabase.rpc("match_clauses", {
+            "query_embedding": query_embedding,
+            "match_threshold": 0.60,
+            "match_count": 5
+        }).execute()
 
-    if not response.data:
-        return []
+        if response.data:
+            return response.data
 
-    return response.data
+        # If no matches, try fallback keyword filter (by summary/tags)
+        fallback = (
+            supabase
+            .from_("clauses")
+            .select("*")
+            .ilike("summary", f"%{question}%")
+            .limit(5)
+            .execute()
+        )
+
+return fallback.data or []
+
 
 # Main GPT answer logic
 def answer_question(question):
