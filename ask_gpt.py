@@ -92,7 +92,7 @@ def fetch_matching_clauses(question):
             .execute()
         )
 
-return fallback.data or []
+        return fallback.data or []
 
 
 # Main GPT answer logic
