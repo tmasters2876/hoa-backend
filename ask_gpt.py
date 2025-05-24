@@ -13,7 +13,7 @@ supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
 # Format top N clause matches for GPT prompt
-    def format_clauses_for_prompt(clauses):
+def format_clauses_for_prompt(clauses):
         """
         Build markdown-formatted text for up to 5 clauses.
         Each entry contains:
