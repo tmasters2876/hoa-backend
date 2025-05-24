@@ -108,13 +108,16 @@ def fetch_matching_clauses(question, tags=None):
 
 # Main GPT answer logic
 def answer_question(question):
+    # First attempt: vector match
     clauses = fetch_matching_clauses(question)
-    if not clauses:
-        # Fallback: try keyword match using landscaping tag
-        clauses = fetch_matching_clauses(question, tags=["landscaping"])
-    if not clauses:
-        return "There are no specific HOA rules found that address this question          directly. Please consult the board for further guidance."
 
+    # Fallback: keyword search using tags if vector fails
+    if not clauses:
+        clauses = fetch_matching_clauses(question, tags=["landscaping"])
+
+    # Final fallback if no matches at all
+    if not clauses:
+        return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
 
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text)
@@ -129,3 +132,4 @@ def answer_question(question):
     )
 
     return gpt_response.choices[0].message.content
+
