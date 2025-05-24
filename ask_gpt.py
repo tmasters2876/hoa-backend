@@ -65,7 +65,7 @@ Final Answer:
 
 
 # Call embedding + Supabase vector match
-def fetch_matching_clauses(question, tags=["landscaping"]):
+def fetch_matching_clauses(question, tags=None):
         # Try vector match first
         embedding_response = client.embeddings.create(
             input=[question],
@@ -110,7 +110,11 @@ def fetch_matching_clauses(question, tags=["landscaping"]):
 def answer_question(question):
     clauses = fetch_matching_clauses(question)
     if not clauses:
-        return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
+        # Fallback: try keyword match using landscaping tag
+        clauses = fetch_matching_clauses(question, tags=["landscaping"])
+    if not clauses:
+        return "There are no specific HOA rules found that address this question          directly. Please consult the board for further guidance."
+
 
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text)
