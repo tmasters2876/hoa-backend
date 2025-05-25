@@ -35,6 +35,7 @@ def format_clauses_for_prompt(clauses):
     return "\n".join(formatted)
 
 
+
 # GPT prompt template
 def build_gpt_prompt(question, clause_text):
     return f"""
