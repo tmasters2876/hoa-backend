@@ -78,7 +78,7 @@ def fetch_matching_clauses(question, tags=None):
     if response.data:
         return response.data
 
-    # Fallback to keyword search using tags
+    # Fallback 1: keyword search WITH tags if available
     if tags:
         fallback = (
             supabase
@@ -89,9 +89,10 @@ def fetch_matching_clauses(question, tags=None):
             .limit(5)
             .execute()
         )
-        return fallback.data
+        if fallback.data:
+            return fallback.data
 
-    # Final fallback: keyword-only search
+    # Fallback 2: keyword search WITHOUT tags
     fallback = (
         supabase
         .from_("clauses")
@@ -101,6 +102,7 @@ def fetch_matching_clauses(question, tags=None):
         .execute()
     )
     return fallback.data
+
 
 # Main GPT answer logic
 def answer_question(question):
