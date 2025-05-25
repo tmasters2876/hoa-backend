@@ -17,8 +17,8 @@ def format_clauses_for_prompt(clauses):
     formatted = []
     for idx, c in enumerate(clauses[:5], 1):
         citation = c.get("citation", "Clause")
-        link     = c.get("link", "#")
-        summary  = c.get("summary", "No summary provided.")
+        link     = c.get("link",   "#")
+        summary  = c.get("summary","No summary provided.")
         cid      = c.get("clause_id")
         doc      = c.get("document", "")
         source   = c.get("match_source", "Unknown")
@@ -28,16 +28,14 @@ def format_clauses_for_prompt(clauses):
         entry = (
             f"{idx}. **[{citation}]({link})**\n"
             f"_Summary_: {summary}\n"
-            f"_Match Source_: **{source}**\n"
-            f"_Reviewer_: ID {cid} • Doc “{doc}” • {page_str}\n"
+            f"_Match Source_: {source}\n"
+            f"_Reviewer_: ID {cid} • Doc \"{doc}\" • {page_str}\n"
         )
         formatted.append(entry)
     return "\n".join(formatted)
 
-
-
 # GPT prompt template
-def build_gpt_prompt(question, clause_text):
+def build_gpt_prompt(question, clause_text, match_source=None):
     return f"""
 You are an HOA policy assistant. Based on the provided clause data, answer the resident's question in clear, friendly, and accurate language.
 
@@ -48,13 +46,13 @@ Below are relevant clause matches:
 {clause_text}
 
 Write your response in this format:
-1. Brief summary of each clause that might apply
+1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
 3. If unclear, suggest checking with the ARC
 4. Always close with: “Let us know if you need help with forms or next steps!”
 
 Use markdown for citations like: **[citation](link)**.
-Final Answer:
+_Final Answer:_
 """
 
 # Call embedding + Supabase vector match
@@ -101,17 +99,13 @@ def fetch_matching_clauses(question, tags=None):
     if fallback.data:
         for clause in fallback.data:
             clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
-
     return fallback.data
-
-
-
 
 # Main GPT answer logic
 def answer_question(question, tags=None):
     clauses = fetch_matching_clauses(question, tags=tags)
     if not clauses:
-        return "There are no specific HOA rules found that address this question  directly. Please consult the board for further guidance."
+        return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
 
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text)
@@ -124,5 +118,5 @@ def answer_question(question, tags=None):
         ],
         temperature=0.4
     )
-    return gpt_response.choices[0].message.content
 
+    return gpt_response.choices[0].message.content
