@@ -14,13 +14,6 @@ supabase = create_client(supabase_url, supabase_key)
 
 # Format top N clause matches for GPT prompt
 def format_clauses_for_prompt(clauses):
-    """
-    Build markdown-formatted text for up to 5 clauses.
-    Each entry contains:
-      • Clickable citation
-      • Plain-English summary
-      • Reviewer line with clause_id, document, and page
-    """
     formatted = []
     for idx, c in enumerate(clauses[:5], 1):
         citation = c.get("citation", "Clause")
@@ -28,16 +21,19 @@ def format_clauses_for_prompt(clauses):
         summary  = c.get("summary", "No summary provided.")
         cid      = c.get("clause_id")
         doc      = c.get("document", "")
+        source   = c.get("match_source", "Unknown")
         pg_match = re.search(r"(?:Pg|Page)[\s]*([0-9\-]+)", citation, re.I)
         page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
 
         entry = (
             f"{idx}. **[{citation}]({link})**\n"
             f"_Summary_: {summary}\n"
+            f"_Match Source_: **{source}**\n"
             f"_Reviewer_: ID {cid} • Doc “{doc}” • {page_str}\n"
         )
         formatted.append(entry)
     return "\n".join(formatted)
+
 
 # GPT prompt template
 def build_gpt_prompt(question, clause_text):
@@ -62,13 +58,13 @@ Final Answer:
 
 # Call embedding + Supabase vector match
 def fetch_matching_clauses(question, tags=None):
+    # Try vector match first
     embedding_response = client.embeddings.create(
         input=[question],
         model="text-embedding-ada-002"
     )
     query_embedding = embedding_response.data[0].embedding
 
-    # Base vector match without tags (since PostgREST doesn't support dynamic params)
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
         "match_threshold": 0.60,
@@ -76,9 +72,11 @@ def fetch_matching_clauses(question, tags=None):
     }).execute()
 
     if response.data:
+        for clause in response.data:
+            clause["match_source"] = "Vector Match"
         return response.data
 
-    # Fallback to keyword-based matching with optional tag filter
+    # Fallback to keyword search with optional tags
     if tags:
         fallback = (
             supabase
@@ -99,7 +97,12 @@ def fetch_matching_clauses(question, tags=None):
             .execute()
         )
 
+    if fallback.data:
+        for clause in fallback.data:
+            clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
+
     return fallback.data
+
 
 
 
