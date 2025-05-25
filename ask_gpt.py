@@ -62,13 +62,13 @@ Final Answer:
 
 # Call embedding + Supabase vector match
 def fetch_matching_clauses(question, tags=None):
-    # Try vector match first
     embedding_response = client.embeddings.create(
         input=[question],
         model="text-embedding-ada-002"
     )
     query_embedding = embedding_response.data[0].embedding
 
+    # Base vector match without tags (since PostgREST doesn't support dynamic params)
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
         "match_threshold": 0.60,
@@ -78,7 +78,7 @@ def fetch_matching_clauses(question, tags=None):
     if response.data:
         return response.data
 
-    # Fallback 1: keyword search WITH tags if available
+    # Fallback to keyword-based matching with optional tag filter
     if tags:
         fallback = (
             supabase
@@ -89,33 +89,25 @@ def fetch_matching_clauses(question, tags=None):
             .limit(5)
             .execute()
         )
-        if fallback.data:
-            return fallback.data
+    else:
+        fallback = (
+            supabase
+            .from_("clauses")
+            .select("*")
+            .ilike("summary", f"%{question}%")
+            .limit(5)
+            .execute()
+        )
 
-    # Fallback 2: keyword search WITHOUT tags
-    fallback = (
-        supabase
-        .from_("clauses")
-        .select("*")
-        .ilike("summary", f"%{question}%")
-        .limit(5)
-        .execute()
-    )
     return fallback.data
 
 
+
 # Main GPT answer logic
-def answer_question(question):
-    # First attempt: vector match
-    clauses = fetch_matching_clauses(question)
-
-    # Fallback: keyword search using tags if vector fails
+def answer_question(question, tags=None):
+    clauses = fetch_matching_clauses(question, tags=tags)
     if not clauses:
-        clauses = fetch_matching_clauses(question, tags=["landscaping"])
-
-    # Final fallback if no matches at all
-    if not clauses:
-        return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
+        return "There are no specific HOA rules found that address this question  directly. Please consult the board for further guidance."
 
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text)
@@ -128,5 +120,5 @@ def answer_question(question):
         ],
         temperature=0.4
     )
-
     return gpt_response.choices[0].message.content
+
