@@ -1,90 +1,127 @@
 import os
+import re
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
-from typing import List, Dict
+from collections import defaultdict
 
-# Load environment variables
 load_dotenv()
+
+# Initialize OpenAI and Supabase clients
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Format clauses for GPT prompt (basic markdown)
-def format_clause_markdown(clause: Dict) -> str:
-    return (
-        f"**Clause ID:** {clause.get('id', 'N/A')}\n"
-        f"**Page:** {clause.get('page', 'N/A')}\n"
-        f"**Summary:** {clause.get('plain_english', 'N/A')}\n"
-        f"[View Document]({clause.get('doc_url', '')})\n"
-    )
+# Format grouped Clauses for GPT prompt
+def format_clauses_for_prompt(clauses):
+    grouped = defaultdict(list)
+    for clause in clauses:
+        grouped[clause.get("document", "Other")].append(clause)
 
-# Format clauses for reviewer mode
-def format_clause_reviewer(clause: Dict) -> str:
-    return (
-        f"**Clause ID:** {clause.get('id', 'N/A')}\n"
-        f"**Page:** {clause.get('page', 'N/A')}\n"
-        f"**Summary:** {clause.get('plain_english', 'N/A')}\n"
-        f"**Original Text:** {clause.get('original_text', 'N/A')}\n"
-        f"[View Document]({clause.get('doc_url', '')})\n"
-    )
+    formatted = []
+    idx = 1
+    for doc, group in grouped.items():
+        for c in group:
+            citation = c.get("citation", "Clause")
+            link = c.get("link", "")
+            summary = c.get("summary", "No summary provided.")
+            cid = c.get("clause_id", "source")
+            source = c.get("match_source", "Unknown")
+            pg_match = re.search(r"Pg[\.\s]?[0-9\-]+", citation, re.I)
+            page_str = f"Pg {pg_match.group(0)}" if pg_match else ""
 
-# Perform vector or filtered tag search on Supabase
-def get_clause_matches(question: str, tags: List[str] = None, top_n: int = 5) -> List[Dict]:
+            entry = (
+                f"**{idx}.** **[{citation}]({link})** #clause-{cid}**\n"
+                f"_Summary:_ {summary}\n"
+                f"_Match Source:_ {source}\n"
+                f"_Reviewer:_ ID `{cid}` • Doc `{doc}` • {page_str}\n"
+                f"_Copy ID:_ `clause-{cid}`\n"
+            )
+            formatted.append(entry)
+            idx += 1
+
+    return "\n---\n".join(formatted)
+
+# GPT prompt template
+def build_gpt_prompt(question, clause_text):
+    return f"""
+You are an HOA policy assistant. Based on the provided clause data, answer the resident's question in clear, friendly, and accurate language.
+
+Resident Question:
+{question}
+
+Below are relevant clause matches:
+{clause_text}
+
+Write your response in this format:
+1. Brief summary of each Clause that might apply
+2. State whether the rules clearly answer the question
+3. If unclear, suggest checking with the ARC
+4. Always close with: \"Let us know if you need help with forms or next steps!\"
+
+Use markdown for citations like: **[citation](link)**.
+---
+Final Answer:
+"""
+
+# Call embedding + Supabase vector match
+def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
+    # 1. Try vector match
+    embedding_response = client.embeddings.create(
+        input=[question],
+        model="text-embedding-ada-002"
+    )
+    query_embedding = embedding_response.data[0].embedding
+
+    response = supabase.rpc("match_clauses", {
+        "query_embedding": query_embedding,
+        "match_threshold": 0.60,
+        "match_count": 5
+    }).execute()
+
+    if response.data:
+        for clause in response.data:
+            clause["match_source"] = "Vector Match"
+        return response.data
+
+    # 2. Fallback to keyword search with optional filters
+    query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
     if tags:
-        response = (
-            supabase.table("clauses")
-            .select("*")
-            .contains("tags", tags)
-            .limit(top_n)
-            .execute()
-        )
-        clauses = response.data
-    else:
-        response = supabase.table("clauses").select("*").limit(top_n).execute()
-        clauses = response.data
+        query = query.contains("tags", tags)
+    if structure_type:
+        query = query.eq("structure_type", structure_type)
+    if concern_level:
+        query = query.eq("concern_level", concern_level)
 
-    return clauses[:top_n]
+    fallback = query.limit(5).execute()
+    if fallback.data:
+        for clause in fallback.data:
+            clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
+        return fallback.data
 
-# Main function to answer question
-def answer_question(
-    question: str,
-    mode: str = "default",
-    tags: List[str] = None,
-    output_format: str = "markdown"
-) -> str | Dict:
+    return []
 
-    clauses = get_clause_matches(question, tags=tags, top_n=5)
+# Main GPT answer logic
+def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
+    clauses = fetch_matching_clauses(question, tags=tags, structure_type=structure_type, concern_level=concern_level)
 
-    formatted_clauses = ""
-    if mode == "reviewer":
-        formatted_clauses = "\n---\n".join([format_clause_reviewer(c) for c in clauses])
-    else:
-        formatted_clauses = "\n---\n".join([format_clause_markdown(c) for c in clauses])
+    if not clauses:
+        return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
 
-    system_prompt = (
-        "You are a helpful HOA policy assistant. Use the clause context provided to answer clearly. "
-        "If no clear rule is found, say so honestly and suggest next steps if appropriate."
-    )
+    clause_text = format_clauses_for_prompt(clauses)
+    prompt = build_gpt_prompt(question, clause_text)
 
-    user_prompt = (
-        f"User Question:\n{question}\n\n"
-        f"Relevant Clauses:\n{formatted_clauses}\n\n"
-        "Answer the user's question in plain English. If a rule is unclear or unspecified, state that clearly."
-    )
-
-    response = client.chat.completions.create(
+    gpt_response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "system", "content": "You are an expert HOA assistant."},
+            {"role": "user", "content": prompt}
         ],
-        temperature=0.2,
-        max_tokens=600
+        temperature=0.4
     )
 
-    final_answer = response.choices[0].message.content
+    final_answer = gpt_response.choices[0].message.content
 
     if output_format == "json":
         return {
@@ -95,4 +132,4 @@ def answer_question(
             "format": "json"
         }
 
-    return f"{final_answer}\n\n---\n{formatted_clauses}"
+    return f"{final_answer}\n\n---\n{clause_text}"
