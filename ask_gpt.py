@@ -26,10 +26,11 @@ def format_clauses_for_prompt(clauses):
         page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
 
         entry = (
-            f"{idx}. **[{citation}]({link})**\n"
+            f"{idx}. **[{citation}]({link}#clause-{cid})**\n"
             f"_Summary_: {summary}\n"
             f"_Match Source_: {source}\n"
             f"_Reviewer_: ID {cid} • Doc \"{doc}\" • {page_str}\n"
+            f"_Copy ID_: clause-{cid}\n"
         )
         formatted.append(entry)
     return "\n".join(formatted)
