@@ -36,7 +36,7 @@ def get_clause_matches(question: str, tags: List[str] = None, top_n: int = 5) ->
         response = (
             supabase.table("clauses")
             .select("*")
-            .filter("tags", "cs", tags)
+            .contains("tags", tags)
             .limit(top_n)
             .execute()
         )
