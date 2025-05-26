@@ -3,18 +3,29 @@ from ask_gpt import answer_question
 
 app = Flask(__name__)
 
-@app.route('/answer', methods=['POST'])
-def get_answer():
-    data = request.json
-    question = data.get("question")
-    if not question:
-        return jsonify({"error": "No question provided"}), 400
-    answer = answer_question(question)
-    return jsonify({"answer": answer})
+@app.route("/ask", methods=["POST"])
+def ask():
+    try:
+        data = request.get_json()
+        question = data.get("question", "")
+        mode = data.get("mode", "default")
+        tags = data.get("tags", [])
+        output_format = data.get("output_format", "markdown")
 
-@app.route('/')
-def index():
-    return "✅ HOA Assistant Backend is Running!"
+        result = answer_question(
+            question=question,
+            mode=mode,
+            tags=tags,
+            output_format=output_format
+        )
+
+        if output_format == "json":
+            return jsonify(result)
+        else:
+            return result, 200, {"Content-Type": "text/markdown"}
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5000)
