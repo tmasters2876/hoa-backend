@@ -1,12 +1,12 @@
 import os
-import openai
+from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
 from typing import List, Dict
 
 # Load environment variables
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
@@ -33,12 +33,10 @@ def format_clause_reviewer(clause: Dict) -> str:
 # Perform vector search on Supabase
 def get_clause_matches(question: str, tags: List[str] = None, top_n: int = 5) -> List[Dict]:
     if tags:
-        # Basic tag filtering using 'contains' (adjust depending on how tags are stored)
         tag_filter = {"tags": {"contains": tags}}
         response = supabase.table("clauses").select("*").match(tag_filter).execute()
         clauses = response.data
     else:
-        # Placeholder vector search result (replace with your vector logic if needed)
         response = supabase.table("clauses").select("*").limit(top_n).execute()
         clauses = response.data
 
@@ -71,7 +69,7 @@ def answer_question(
         "Answer the user's question in plain English. If a rule is unclear or unspecified, state that clearly."
     )
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -81,7 +79,7 @@ def answer_question(
         max_tokens=600
     )
 
-    final_answer = response.choices[0].message["content"]
+    final_answer = response.choices[0].message.content
 
     if output_format == "json":
         return {
@@ -93,3 +91,4 @@ def answer_question(
         }
 
     return f"{final_answer}\n\n---\n{formatted_clauses}"
+
