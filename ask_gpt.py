@@ -3,6 +3,7 @@ import re
 from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
+from collections import defaultdict
 
 load_dotenv()
 
@@ -12,27 +13,33 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Format top N clause matches for GPT prompt
+# Format grouped clauses for GPT prompt
 def format_clauses_for_prompt(clauses):
-    formatted = []
-    for idx, c in enumerate(clauses[:5], 1):
-        citation = c.get("citation", "Clause")
-        link     = c.get("link",   "#")
-        summary  = c.get("summary","No summary provided.")
-        cid      = c.get("clause_id")
-        doc      = c.get("document", "")
-        source   = c.get("match_source", "Unknown")
-        pg_match = re.search(r"(?:Pg|Page)[\s]*([0-9\-]+)", citation, re.I)
-        page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
+    grouped = defaultdict(list)
+    for clause in clauses[:5]:
+        grouped[clause.get("document", "Other")].append(clause)
 
-        entry = (
-            f"{idx}. **[{citation}]({link}#clause-{cid})**\n"
-            f"_Summary_: {summary}\n"
-            f"_Match Source_: {source}\n"
-            f"_Reviewer_: ID {cid} • Doc \"{doc}\" • {page_str}\n"
-            f"_Copy ID_: clause-{cid}\n"
-        )
-        formatted.append(entry)
+    formatted = []
+    idx = 1
+    for doc, group in grouped.items():
+        for c in group:
+            citation = c.get("citation", "Clause")
+            link     = c.get("link",   "#")
+            summary  = c.get("summary","No summary provided.")
+            cid      = c.get("clause_id")
+            source   = c.get("match_source", "Unknown")
+            pg_match = re.search(r"(?:Pg|Page)[\s]*([0-9\-]+)", citation, re.I)
+            page_str = f"Pg {pg_match.group(1)}" if pg_match else ""
+
+            entry = (
+                f"{idx}. **[{citation}]({link}#clause-{cid})**\n"
+                f"_Summary_: {summary}\n"
+                f"_Match Source_: {source}\n"
+                f"_Reviewer_: ID {cid} • Doc \"{doc}\" • {page_str}\n"
+                f"_Copy ID_: clause-{cid}\n"
+            )
+            formatted.append(entry)
+            idx += 1
     return "\n".join(formatted)
 
 # GPT prompt template
@@ -57,7 +64,7 @@ _Final Answer:_
 """
 
 # Call embedding + Supabase vector match
-def fetch_matching_clauses(question, tags=None):
+def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     # Try vector match first
     embedding_response = client.embeddings.create(
         input=[question],
@@ -76,26 +83,16 @@ def fetch_matching_clauses(question, tags=None):
             clause["match_source"] = "Vector Match"
         return response.data
 
-    # Fallback to keyword search with optional tags
+    # Fallback to keyword search with optional filters
+    query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
     if tags:
-        fallback = (
-            supabase
-            .from_("clauses")
-            .select("*")
-            .contains("tags", tags)
-            .ilike("summary", f"%{question}%")
-            .limit(5)
-            .execute()
-        )
-    else:
-        fallback = (
-            supabase
-            .from_("clauses")
-            .select("*")
-            .ilike("summary", f"%{question}%")
-            .limit(5)
-            .execute()
-        )
+        query = query.contains("tags", tags)
+    if structure_type:
+        query = query.eq("structure_type", structure_type)
+    if concern_level:
+        query = query.eq("concern_level", concern_level)
+
+    fallback = query.limit(5).execute()
 
     if fallback.data:
         for clause in fallback.data:
@@ -103,8 +100,13 @@ def fetch_matching_clauses(question, tags=None):
     return fallback.data
 
 # Main GPT answer logic
-def answer_question(question, tags=None):
-    clauses = fetch_matching_clauses(question, tags=tags)
+def answer_question(question, tags=None, structure_type=None, concern_level=None):
+    clauses = fetch_matching_clauses(
+        question,
+        tags=tags,
+        structure_type=structure_type,
+        concern_level=concern_level
+    )
     if not clauses:
         return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
 
