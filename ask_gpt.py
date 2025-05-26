@@ -32,14 +32,10 @@ def format_clauses_for_prompt(clauses):
             page_str = f"Pg {pg_match.group(0)}" if pg_match else ""
 
             entry = (
-                f"**{idx}. [\[{citation}\]]({link})**  \
-"
-                f"_Summary:_ {summary}  \
-"
-                f"_Match Source:_ {source}  \
-"
-                f"_Reviewer:_ ID `clause-{cid}` • Doc `{doc}` • {page_str}  \
-"
+                f"**{idx}. [\[{citation}\]]({link})**  \n"
+                f"_Summary:_ {summary}  \n"
+                f"_Match Source:_ {source}  \n"
+                f"_Reviewer:_ ID `clause-{cid}` • Doc `{doc}` • {page_str}  \n"
                 f"_Copy ID:_ `clause-{cid}`"
             )
             formatted.append(entry)
@@ -62,7 +58,7 @@ Write your response in this format:
 1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
 3. If unclear, suggest checking with the ARC
-4. Always close with: \"Let us know if you need help with forms or next steps!\"
+4. Always close with: "Let us know if you need help with forms or next steps!"
 
 Use markdown for citations like: **[citation](link)**.
 ---
@@ -84,31 +80,48 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         "match_count": 5
     }).execute()
 
-    if response.data:
-        for clause in response.data:
-            clause["match_source"] = "Vector Match"
-        return response.data
+    vector_matches = response.data or []
+    for clause in vector_matches:
+        clause["match_source"] = "Vector Match"
+        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # 2. Fallback to keyword search with optional filters
-    query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
-    if tags:
-        query = query.contains("tags", tags)
-    if structure_type:
-        query = query.eq("structure_type", structure_type)
-    if concern_level:
-        query = query.eq("concern_level", concern_level)
+    # 2. Fallback to keyword search if not enough
+    fallback_matches = []
+    if len(vector_matches) < 5:
+        query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
+        if tags:
+            query = query.contains("tags", tags)
+        if structure_type:
+            query = query.eq("structure_type", structure_type)
+        if concern_level:
+            query = query.eq("concern_level", concern_level)
 
-    fallback = query.limit(5).execute()
-    if fallback.data:
-        for clause in fallback.data:
+        fallback = query.limit(5).execute()
+        fallback_matches = fallback.data or []
+        for clause in fallback_matches:
             clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
-        return fallback.data
+            clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    return []
+    return vector_matches + fallback_matches
 
 # Main GPT answer logic
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
-    clauses = fetch_matching_clauses(question, tags=tags, structure_type=structure_type, concern_level=concern_level)
+    raw_clauses = fetch_matching_clauses(
+        question,
+        tags=tags,
+        structure_type=structure_type,
+        concern_level=concern_level
+    )
+
+    # ✅ Deduplicate by clause_id, prioritize vector
+    unique_clauses = {}
+    for clause in raw_clauses:
+        cid = clause.get("clause_id") or clause.get("id")
+        if cid not in unique_clauses or clause.get("match_source") == "Vector Match":
+            clause["clause_id"] = cid
+            unique_clauses[cid] = clause
+
+    clauses = list(unique_clauses.values())
 
     if not clauses:
         return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
