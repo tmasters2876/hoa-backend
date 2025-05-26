@@ -32,16 +32,20 @@ def format_clauses_for_prompt(clauses):
             page_str = f"Pg {pg_match.group(0)}" if pg_match else ""
 
             entry = (
-                f"**{idx}.** **[{citation}]({link})** #clause-{cid}**\n"
-                f"_Summary:_ {summary}\n"
-                f"_Match Source:_ {source}\n"
-                f"_Reviewer:_ ID `{cid}` • Doc `{doc}` • {page_str}\n"
-                f"_Copy ID:_ `clause-{cid}`\n"
+                f"**{idx}. [\[{citation}\]]({link})**  \
+"
+                f"_Summary:_ {summary}  \
+"
+                f"_Match Source:_ {source}  \
+"
+                f"_Reviewer:_ ID `clause-{cid}` • Doc `{doc}` • {page_str}  \
+"
+                f"_Copy ID:_ `clause-{cid}`"
             )
             formatted.append(entry)
             idx += 1
 
-    return "\n---\n".join(formatted)
+    return "\n\n---\n\n".join(formatted)
 
 # GPT prompt template
 def build_gpt_prompt(question, clause_text):
