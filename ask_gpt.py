@@ -30,11 +30,16 @@ def format_clause_reviewer(clause: Dict) -> str:
         f"[View Document]({clause.get('doc_url', '')})\n"
     )
 
-# Perform vector search on Supabase
+# Perform vector or filtered tag search on Supabase
 def get_clause_matches(question: str, tags: List[str] = None, top_n: int = 5) -> List[Dict]:
     if tags:
-        tag_filter = {"tags": {"contains": tags}}
-        response = supabase.table("clauses").select("*").match(tag_filter).execute()
+        response = (
+            supabase.table("clauses")
+            .select("*")
+            .filter("tags", "cs", tags)
+            .limit(top_n)
+            .execute()
+        )
         clauses = response.data
     else:
         response = supabase.table("clauses").select("*").limit(top_n).execute()
@@ -91,4 +96,3 @@ def answer_question(
         }
 
     return f"{final_answer}\n\n---\n{formatted_clauses}"
-
