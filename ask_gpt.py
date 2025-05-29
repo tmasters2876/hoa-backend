@@ -7,7 +7,6 @@ from collections import defaultdict
 
 load_dotenv()
 
-# Initialize OpenAI and Supabase clients
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -31,7 +30,6 @@ def format_clauses_for_prompt(clauses):
             page_match = re.search(r"Pg[P|p]?\s?(\d{1,2})(?!\d)", citation, re.I)
             page_str = f"Pg {page_match.group(1)}" if page_match else ""
 
-            # Clickable HTML citation
             link_html = f'<a href="{link}" target="_blank">{citation}</a>' if link else citation
 
             entry = (
@@ -44,14 +42,19 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
-# Prompt template
-def build_gpt_prompt(question, clause_text):
+# GPT prompt template
+def build_gpt_prompt(question, clause_text, no_matches=False):
+    fallback_msg = (
+        "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond."
+        "<br><br>" if no_matches else ""
+    )
     return f"""
 You are an HOA policy assistant. Based on the provided Clause data, answer the resident's question in clear, friendly, and accurate language.
 
 Resident Question:
 {question}
 
+{fallback_msg}
 Below are relevant clause matches:
 {clause_text}
 
@@ -88,28 +91,38 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-        fallback_matches = []
+    # Step 2: Keyword + tag fallback
+    if len(vector_matches) < 5:
+        query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
+        if tags:
+            query = query.contains("tags", tags)
+        if structure_type:
+            query = query.eq("structure_type", structure_type)
+        if concern_level:
+            query = query.eq("concern_level", concern_level)
 
-        if len(vector_matches) < 5 or (tags or structure_type or concern_level):
-            query = supabase.from_("clauses").select("*").ilike("summary", f"%    {question}%")
-            if tags:
-                query = query.contains("tags", tags)
-            if structure_type:
-                query = query.eq("structure_type", structure_type)
-            if concern_level:
-                query = query.eq("concern_level", concern_level)
-
-            fallback = query.limit(5).execute()
-            fallback_matches = fallback.data or []
-            for clause in fallback_matches:
-                clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
-                clause["clause_id"] = clause.get("clause_id") or clause.get("id")
+        fallback = query.limit(5).execute()
+        fallback_matches = fallback.data or []
+        for clause in fallback_matches:
+            clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
+            clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
         return vector_matches + fallback_matches
 
     return vector_matches
 
-# Main GPT answer logic
+# Get generic fallback clauses
+def fetch_soft_fallback_clauses():
+    general_tags = ["approval", "structure", "location", "visibility", "placement"]
+    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
+    result = query.execute()
+    clauses = result.data or []
+    for clause in clauses:
+        clause["match_source"] = "General Soft Fallback"
+        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
+    return clauses
+
+# Main GPT wrapper
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question=question,
@@ -118,20 +131,20 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         concern_level=concern_level
     )
 
-    # Deduplicate by clause_id, prioritize vector
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
         if cid not in unique_clauses or clause.get("match_source") == "Vector Match":
             unique_clauses[cid] = clause
-
     clauses = list(unique_clauses.values())
 
+    no_matches = False
     if not clauses:
-        return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
+        clauses = fetch_soft_fallback_clauses()
+        no_matches = True
 
     clause_text = format_clauses_for_prompt(clauses)
-    prompt = build_gpt_prompt(question, clause_text)
+    prompt = build_gpt_prompt(question, clause_text, no_matches=no_matches)
 
     gpt_response = client.chat.completions.create(
         model="gpt-4o",
