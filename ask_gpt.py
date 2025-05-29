@@ -20,35 +20,31 @@ def format_clauses_for_prompt(clauses):
         grouped[clause.get("document", "Other")].append(clause)
 
     formatted = []
-    idx = 1
     for doc, group in grouped.items():
+        idx = 1
         for c in group:
             citation = c.get("citation", "Clause")
             link = c.get("link", "")
             summary = c.get("summary", "No summary provided.")
             cid = c.get("clause_id", "source")
             source = c.get("match_source", "Unknown")
-            page_match = re.search(r"Pg[P|p]?\s?(\d{1,2})(?!\d)", citation, re.I)
-            page_str = f"Pg {page_match.group(1)}" if page_match else ""
-
-            # HTML version of the clickable link
-            link_html = f'<a href="{link}" target="_blank">{citation}</a>' if link else citation
+            page_match = re.search(r"Pg(?:\.|\s)?(\d{1,3})", citation, re.I)
+            pg_match = f"Pg {page_match.group(1)}" if page_match else ""
 
             entry = (
-                f"{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}\n\n"
-                f"<strong>Match Source</strong>: {source} • Doc <code>{doc}</code> • {page_str} \n"
-                f"<strong>Reviewer ID</strong>: <code>{cid}</code>\n"
+                f"**{idx}. Summary of Clause**: According to **[{citation}]({link})**, "
+                f"{summary}\n\n"
+                f"**Match Source**: {source} • Doc `{doc}` • {pg_match}\n"
+                f"**Reviewer ID**: `{cid}`\n"
             )
             formatted.append(entry)
             idx += 1
+    return "\n---\n\n".join(formatted)
 
-    return "<br><br>".join(formatted)
-
-
-# GPT prompt template
+# GPT Prompt Template
 def build_gpt_prompt(question, clause_text):
     return f"""
-You are an HOA policy assistant. Based on the provided Clause data, answer the resident's question in clear, friendly, and accurate language.
+You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
 
 Resident Question:
 {question}
@@ -60,17 +56,18 @@ Write your response in this format:
 1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
 3. If unclear, suggest checking with the ARC
-4. Always close with: "Let us know if you need help with forms or next steps!"
 
-Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
+Always close with: "Let us know if you need help with forms or next steps!"
+
+Use markdown for citations like: **[citation](link)**.
 
 ---
-
 Final Answer:
 """
-# Call embedding + Supabase vector match
+
+# Fetch matching clauses with fallback
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
-    # 1. Try vector match
+    # Step 1: Vector Match
     embedding_response = client.embeddings.create(
         input=question,
         model="text-embedding-ada-002"
@@ -86,30 +83,26 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
     vector_matches = response.data or []
     for clause in vector_matches:
         clause["match_source"] = "Vector Match"
-        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # 2. Fallback to keyword search if not enough
-    if len(vector_matches) < 5:
-        query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
+    # Step 2: Fallback if vector matches are low
+    if len(vector_matches) < 3:
+        clause_query = supabase.from_("clauses").select("*")
         if tags:
-            query = query.contains("tags", tags)
+            clause_query = clause_query.ilike("tags", f"%{tags[0]}%")
         if structure_type:
-            query = query.eq("structure_type", structure_type)
+            clause_query = clause_query.ilike("structure_type", f"%{structure_type}%")
         if concern_level:
-            query = query.eq("concern_level", concern_level)
+            clause_query = clause_query.eq("concern_level", concern_level)
 
-        fallback = query.limit(5).execute()
-        fallback_matches = fallback.data or []
+        result = clause_query.limit(3).execute()
+        fallback_matches = result.data or []
         for clause in fallback_matches:
-            clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
-            clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-
+            clause["match_source"] = "Tag + Keyword Fallback"
         return vector_matches + fallback_matches
 
     return vector_matches
 
-
-# Main GPT answer wrapper
+# Main GPT Answer Function
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question=question,
@@ -118,15 +111,14 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         concern_level=concern_level
     )
 
-    # Deduplicate by clause ID, prioritize vector
+    # Deduplicate clauses by ID
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
-        if cid not in unique_clauses or clause.get("match_source") == "Vector Match":
+        if cid not in unique_clauses:
             unique_clauses[cid] = clause
 
     clauses = list(unique_clauses.values())
-
     if not clauses:
         return "There are no specific HOA rules found that address this question directly. Please consult the board for further guidance."
 
@@ -143,14 +135,13 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     )
 
     final_answer = gpt_response.choices[0].message.content
-
     if output_format == "json":
         return {
             "question": question,
             "answer": final_answer,
             "matches": clauses,
             "mode": mode,
-            "format": "json"
+            "output_format": "json"
         }
 
-    return f"{final_answer}<br><br>{clause_text}"
+    return f"{final_answer}\n\n---\n\n{clause_text}"
