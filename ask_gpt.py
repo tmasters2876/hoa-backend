@@ -13,7 +13,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Format grouped Clauses for GPT prompt
+# Format grouped clauses for GPT prompt
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -28,25 +28,27 @@ def format_clauses_for_prompt(clauses):
             summary = c.get("summary", "No summary provided.")
             cid = c.get("clause_id", "source")
             source = c.get("match_source", "Unknown")
-            pg_match = re.search(r"Pg[\.\s]?[0-9\-]+", citation, re.I)
-            page_str = f"Pg {pg_match.group(0)}" if pg_match else ""
+            page_match = re.search(r"Pg[P|p]?\s?(\d{1,2})(?!\d)", citation, re.I)
+            page_str = f"Pg {page_match.group(1)}" if page_match else ""
+
+            # HTML version of the clickable link
+            link_html = f'<a href="{link}" target="_blank">{citation}</a>' if link else citation
 
             entry = (
-                f"**{idx}. [\[{citation}\]]({link})**  \n"
-                f"_Summary:_ {summary}  \n"
-                f"_Match Source:_ {source}  \n"
-                f"_Reviewer:_ ID `clause-{cid}` • Doc `{doc}` • {page_str}  \n"
-                f"_Copy ID:_ `clause-{cid}`"
+                f"{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}\n\n"
+                f"<strong>Match Source</strong>: {source} • Doc <code>{doc}</code> • {page_str} \n"
+                f"<strong>Reviewer ID</strong>: <code>{cid}</code>\n"
             )
             formatted.append(entry)
             idx += 1
 
-    return "\n\n---\n\n".join(formatted)
+    return "<br><br>".join(formatted)
+
 
 # GPT prompt template
 def build_gpt_prompt(question, clause_text):
     return f"""
-You are an HOA policy assistant. Based on the provided clause data, answer the resident's question in clear, friendly, and accurate language.
+You are an HOA policy assistant. Based on the provided Clause data, answer the resident's question in clear, friendly, and accurate language.
 
 Resident Question:
 {question}
@@ -60,23 +62,24 @@ Write your response in this format:
 3. If unclear, suggest checking with the ARC
 4. Always close with: "Let us know if you need help with forms or next steps!"
 
-Use markdown for citations like: **[citation](link)**.
+Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
+
 ---
+
 Final Answer:
 """
-
 # Call embedding + Supabase vector match
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     # 1. Try vector match
     embedding_response = client.embeddings.create(
-        input=[question],
+        input=question,
         model="text-embedding-ada-002"
     )
     query_embedding = embedding_response.data[0].embedding
 
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
-        "match_threshold": 0.60,
+        "match_threshold": 0.80,
         "match_count": 5
     }).execute()
 
@@ -86,7 +89,6 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
     # 2. Fallback to keyword search if not enough
-    fallback_matches = []
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
         if tags:
@@ -102,23 +104,25 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
             clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    return vector_matches + fallback_matches
+        return vector_matches + fallback_matches
 
-# Main GPT answer logic
+    return vector_matches
+
+
+# Main GPT answer wrapper
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
-        question,
+        question=question,
         tags=tags,
         structure_type=structure_type,
         concern_level=concern_level
     )
 
-    # ✅ Deduplicate by clause_id, prioritize vector
+    # Deduplicate by clause ID, prioritize vector
     unique_clauses = {}
     for clause in raw_clauses:
-        cid = clause.get("clause_id") or clause.get("id")
+        cid = clause.get("clause_id")
         if cid not in unique_clauses or clause.get("match_source") == "Vector Match":
-            clause["clause_id"] = cid
             unique_clauses[cid] = clause
 
     clauses = list(unique_clauses.values())
@@ -149,4 +153,4 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
             "format": "json"
         }
 
-    return f"{final_answer}\n\n---\n{clause_text}"
+    return f"{final_answer}<br><br>{clause_text}"
