@@ -88,21 +88,22 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Step 2: Keyword + tag fallback if < 5 matches
-    if len(vector_matches) < 5:
-        query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
-        if tags:
-            query = query.contains("tags", tags)
-        if structure_type:
-            query = query.eq("structure_type", structure_type)
-        if concern_level:
-            query = query.eq("concern_level", concern_level)
+        fallback_matches = []
 
-        fallback = query.limit(5).execute()
-        fallback_matches = fallback.data or []
-        for clause in fallback_matches:
-            clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
-            clause["clause_id"] = clause.get("clause_id") or clause.get("id")
+        if len(vector_matches) < 5 or (tags or structure_type or concern_level):
+            query = supabase.from_("clauses").select("*").ilike("summary", f"%    {question}%")
+            if tags:
+                query = query.contains("tags", tags)
+            if structure_type:
+                query = query.eq("structure_type", structure_type)
+            if concern_level:
+                query = query.eq("concern_level", concern_level)
+
+            fallback = query.limit(5).execute()
+            fallback_matches = fallback.data or []
+            for clause in fallback_matches:
+                clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
+                clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
         return vector_matches + fallback_matches
 
