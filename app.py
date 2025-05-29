@@ -1,6 +1,7 @@
 from flask_cors import CORS
 from flask import Flask, request, jsonify
 from ask_gpt import answer_question
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -30,4 +31,6 @@ def ask():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"✅ Server starting on port {port}...")
+    app.run(debug=False, host="0.0.0.0", port=port)
