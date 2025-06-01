@@ -121,6 +121,14 @@ def fetch_soft_fallback_clauses():
     return result.data
 
 # Main endpoint logic
+# 🧙 Humor injection for whimsical questions
+whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
+if any(word in question.lower() for word in whimsical_keywords):
+    system_prompt += (
+        "\n\nIf the question appears whimsical or fantastical (like building a castle or keeping a dragon), "
+        "acknowledge the creativity with a brief, friendly touch of humor before returning to the HOA's real policies."
+    )
+
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question,
