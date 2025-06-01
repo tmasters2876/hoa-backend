@@ -67,7 +67,7 @@ Write your response in this format:
 3. If unclear, suggest checking with the ARC
 4. Always close with: “If you have any other questions, feel free to ask!”
 
-Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
+Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
 
 ---
 
@@ -121,14 +121,6 @@ def fetch_soft_fallback_clauses():
     return result.data
 
 # Main endpoint logic
-# 🧙 Humor injection for whimsical questions
-whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
-if any(word in question.lower() for word in whimsical_keywords):
-    system_prompt += (
-        "\n\nIf the question appears whimsical or fantastical (like building a castle or keeping a dragon), "
-        "acknowledge the creativity with a brief, friendly touch of humor before returning to the HOA's real policies."
-    )
-
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question,
@@ -152,6 +144,14 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
 
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text, no_matches)
+
+    # 🦝 Humor injection for whimsical questions
+    whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
+    if any(word in question.lower() for word in whimsical_keywords):
+        prompt += (
+            "\n\nNote: This question appears whimsical or fantastical (e.g., involving dragons or moats). "
+            "Please respond with a brief, friendly touch of humor before returning to the HOA's real policies."
+        )
 
     gpt_response = client.chat.completions.create(
         model="gpt-4o",
@@ -177,4 +177,3 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         }
 
     return f"{final_answer}<br><br>{clause_text}"
-
