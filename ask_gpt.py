@@ -28,32 +28,29 @@ def format_clauses_for_prompt(clauses):
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
 
-            # Try to extract page number and file ID
+            # Extract page number and file ID
             page_match = re.search(r'pg(?:\.|age)?\s*(\d{1,2})', citation, re.I)
             file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
 
-            # Construct preview link only if it's a Drive link and we can extract file ID + page number
-            if (
-                "drive.google.com" in link
-                and file_id_match
-                and page_match
-                and "preview?page=" not in link  # Prevent double-appending
-            ):
+            # Clean Google Drive link
+            if "drive.google.com" in link and file_id_match and page_match and "preview?page=" not in link:
                 file_id = file_id_match.group(1)
                 page = page_match.group(1)
                 clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
                 link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
 
-            # Leave intact if already correct
-            elif "drive.google.com" in link and "preview?page=" in link:
-                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-
-            # Fallback: default link usage
+            # Fallback: malformed double-wrapped drive link
             elif citation and link:
-                link_html = f'<a href="{link}" target="_blank">{citation}</a>'
+                nested_match = re.search(r'https:\/\/drive\.google\.com\/file\/d\/https:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)', link)
+                if nested_match and page_match:
+                    file_id = nested_match.group(1)
+                    page = page_match.group(1)
+                    clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
+                    link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+                else:
+                    link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
                 link_html = citation
-
 
             entry = (
                 f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
@@ -66,11 +63,11 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
-# Prompt assembly
+# Build GPT prompt
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
-        "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond."
-        "<br><br>" if no_matches else ""
+        "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
+        if no_matches else ""
     )
 
     return f"""
@@ -96,9 +93,8 @@ Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
 Final Answer:
 """
 
-# Clause matching via embeddings + fallback
+# Vector and fallback match
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
-    # Step 1: vector match
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
         input=question,
@@ -116,7 +112,6 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Step 2: fallback match if needed
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -133,7 +128,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     return vector_matches
 
-# Soft fallback if nothing matches
+# Generic fallback clauses
 def fetch_soft_fallback_clauses():
     query = supabase.from_("clauses").select("*").contains("tags", [
         "approval", "structure", "location", "visibility", "placement"
@@ -145,7 +140,7 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return clauses
 
-# Main endpoint handler
+# Main response generator
 def answer_question(question, tags=None, mode="default", structure_type=None,
                     concern_level=None, output_format="markdown"):
 
@@ -155,7 +150,6 @@ def answer_question(question, tags=None, mode="default", structure_type=None,
         concern_level=concern_level
     )
 
-    # De-dupe based on match_source
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
