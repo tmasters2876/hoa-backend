@@ -1,13 +1,13 @@
 import os
 import re
-from openai import OpenAI
+import openai
 from supabase import create_client
 from dotenv import load_dotenv
 from collections import defaultdict
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
@@ -22,20 +22,31 @@ def format_clauses_for_prompt(clauses):
     idx = 1
     for doc, group in grouped.items():
         for c in group:
-            citation = c.get("citation", "Clause")
+            citation = c.get("citation", f"Clause {idx}")
             link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
-            cid = c.get("clause_id", "source")
+            page_match = re.search(r'pg(?:\.|age)?\s*(\d{1,2})', citation, re.I)
             source = c.get("match_source", "Unknown")
-            page_match = re.search(r"Pg[P|p]?\s?(\d{1,2})(?!\d)", citation, re.I)
-            page_str = f"Pg {page_match.group(1)}" if page_match else ""
+            clause_id = c.get("clause_id", "")
 
-            link_html = f'<a href="{link}" target="_blank">{citation}</a>' if link else citation
+            # Fix Google Drive links to proper preview?page=X
+            if "drive.google.com" in link and "/view" in link:
+                file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
+                if file_id_match and page_match:
+                    file_id = file_id_match.group(1)
+                    page = page_match.group(1)
+                    clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
+                    link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+                else:
+                    link_html = f'<a href="{link}" target="_blank">{citation}</a>'
+            else:
+                link_html = f'<a href="{link}" target="_blank">{citation}</a>' if citation and link else citation
 
             entry = (
-                f"{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}<br><br>"
-                f"<strong>Match Source</strong>: {source} • Doc <code>{doc}</code> • {page_str}<br>"
-                f"<strong>Reviewer ID</strong>: <code>{cid}</code><br>"
+                f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
+                f"<strong>Match Source</strong>: {source} • "
+                f"<code>{doc}</code> • "
+                f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
             )
             formatted.append(entry)
             idx += 1
@@ -48,21 +59,22 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond."
         "<br><br>" if no_matches else ""
     )
+
     return f"""
-You are an HOA policy assistant. Based on the provided Clause data, answer the resident's question in clear, friendly, and accurate language.
+You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
 
 Resident Question:
 {question}
 
 {fallback_msg}
-Below are relevant clause matches:
+Below are relevant Clause matches:
 {clause_text}
 
 Write your response in this format:
-1. Brief summary of each Clause that might apply
-2. State whether the rules clearly answer the question
-3. If unclear, suggest checking with the ARC
-4. Always close with: "If you have any other questions, feel free to ask!"
+1. Brief summary of each Clause that might apply  
+2. State whether the rules clearly answer the question  
+3. If unclear, suggest checking with the ARC  
+4. Always close with: “If you have any other questions, feel free to ask!”
 
 Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
 
@@ -75,23 +87,23 @@ Final Answer:
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     # Step 1: Try vector match
     embedding_response = client.embeddings.create(
+        model="text-embedding-ada-002",
         input=question,
-        model="text-embedding-ada-002"
     )
     query_embedding = embedding_response.data[0].embedding
 
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
-        "match_threshold": 0.80,
+        "match_threshold": 0.8,
         "match_count": 5
-    }).execute()
+    })
 
     vector_matches = response.data or []
     for clause in vector_matches:
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Step 2: Keyword + tag fallback
+    # Step 2: Fallback tag match
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -100,21 +112,19 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             query = query.eq("structure_type", structure_type)
         if concern_level:
             query = query.eq("concern_level", concern_level)
-
-        fallback = query.limit(5).execute()
-        fallback_matches = fallback.data or []
+        fallback_matches = query.limit(5).execute().data or []
         for clause in fallback_matches:
-            clause["match_source"] = "Tag + Keyword Fallback" if tags else "Keyword Fallback"
+            clause["match_source"] = "Tag + Keyword Fallback"
             clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-
-        return vector_matches + fallback_matches
+        vector_matches += fallback_matches
 
     return vector_matches
 
 # Get generic fallback clauses
 def fetch_soft_fallback_clauses():
-    general_tags = ["approval", "structure", "location", "visibility", "placement"]
-    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
+    query = supabase.from_("clauses").select("*").contains("tags", [
+        "approval", "structure", "location", "visibility", "placement"
+    ]).limit(5)
     result = query.execute()
     clauses = result.data or []
     for clause in clauses:
@@ -122,19 +132,21 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return clauses
 
-# Main GPT wrapper
-def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
+# Main GPT answer function
+def answer_question(question, tags=None, mode="default", structure_type=None,
+                    concern_level=None, output_format="markdown"):
+
     raw_clauses = fetch_matching_clauses(
-        question=question,
-        tags=tags,
+        question, tags=tags,
         structure_type=structure_type,
         concern_level=concern_level
     )
 
+    # Deduplicate by match source
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
-        if cid not in unique_clauses or clause.get("match_source") == "Vector Match":
+        if cid not in unique_clauses and clause.get("match_source") == "Vector Match":
             unique_clauses[cid] = clause
     clauses = list(unique_clauses.values())
 
@@ -144,7 +156,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         no_matches = True
 
     clause_text = format_clauses_for_prompt(clauses)
-    prompt = build_gpt_prompt(question, clause_text, no_matches=no_matches)
+    prompt = build_gpt_prompt(question, clause_text, no_matches)
 
     gpt_response = client.chat.completions.create(
         model="gpt-4o",
@@ -161,7 +173,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         return {
             "question": question,
             "answer": final_answer,
-            "matches": clauses,
+            "clauses": clauses,
             "mode": mode,
             "format": "json"
         }
