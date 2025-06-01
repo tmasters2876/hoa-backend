@@ -12,7 +12,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Format grouped clauses for GPT prompt
+# Format clauses for GPT prompt
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -25,22 +25,23 @@ def format_clauses_for_prompt(clauses):
             citation = c.get("citation", f"Clause {idx}")
             link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
-            page_match = re.search(r'pg(?:\.|age)?\s*(\d{1,2})', citation, re.I)
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
 
-            # Fix Google Drive links to proper preview?page=X
-            if "drive.google.com" in link and "/view" in link:
-                file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
-                if file_id_match and page_match:
-                    file_id = file_id_match.group(1)
-                    page = page_match.group(1)
-                    clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
-                    link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-                else:
-                    link_html = f'<a href="{link}" target="_blank">{citation}</a>'
+            # Try to extract page number and file ID
+            page_match = re.search(r'pg(?:\.|age)?\s*(\d{1,2})', citation, re.I)
+            file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
+
+            # ✅ Fix malformed Drive links if possible
+            if "drive.google.com" in link and file_id_match and page_match:
+                file_id = file_id_match.group(1)
+                page = page_match.group(1)
+                clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
+                link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+            elif citation and link:
+                link_html = f'<a href="{link}" target="_blank">{citation}</a>'
             else:
-                link_html = f'<a href="{link}" target="_blank">{citation}</a>' if citation and link else citation
+                link_html = citation
 
             entry = (
                 f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
@@ -53,7 +54,7 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
-# GPT prompt template
+# Prompt assembly
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond."
@@ -83,9 +84,9 @@ Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
 Final Answer:
 """
 
-# Supabase + embedding vector match
+# Clause matching via embeddings + fallback
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
-    # Step 1: Try vector match
+    # Step 1: vector match
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
         input=question,
@@ -96,14 +97,14 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         "query_embedding": query_embedding,
         "match_threshold": 0.8,
         "match_count": 5
-    })
+    }).execute()
 
     vector_matches = response.data or []
     for clause in vector_matches:
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Step 2: Fallback tag match
+    # Step 2: fallback match if needed
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -120,7 +121,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     return vector_matches
 
-# Get generic fallback clauses
+# Soft fallback if nothing matches
 def fetch_soft_fallback_clauses():
     query = supabase.from_("clauses").select("*").contains("tags", [
         "approval", "structure", "location", "visibility", "placement"
@@ -132,7 +133,7 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return clauses
 
-# Main GPT answer function
+# Main endpoint handler
 def answer_question(question, tags=None, mode="default", structure_type=None,
                     concern_level=None, output_format="markdown"):
 
@@ -142,7 +143,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None,
         concern_level=concern_level
     )
 
-    # Deduplicate by match source
+    # De-dupe based on match_source
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
