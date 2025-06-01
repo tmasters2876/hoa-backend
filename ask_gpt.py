@@ -24,7 +24,7 @@ def format_clauses_for_prompt(clauses):
         for c in group:
             citation = c.get("citation", "Clause")
             link = c.get("link", "")
-            summary = c.get("summary", "No summary provided.")
+            summary = c.get("plain_summary", "No summary provided.")
             cid = c.get("clause_id", "source")
             source = c.get("match_source", "Unknown")
             page_match = re.search(r"Pg[P|p]?\s?(\d{1,2})(?!\d)", citation, re.I)
