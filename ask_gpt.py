@@ -93,7 +93,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     # Step 2: Keyword + tag fallback
     if len(vector_matches) < 5:
-        query = supabase.from_("clauses").select("*").ilike("summary", f"%{question}%")
+        query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
             query = query.contains("tags", tags)
         if structure_type:
