@@ -28,27 +28,14 @@ def format_clauses_for_prompt(clauses):
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
 
-            # Extract page number and file ID
-            page_match = re.search(r'pg(?:\.|age)?\s*(\d{1,2})', citation, re.I)
+            # ✅ New logic: only link to the base document
             file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
-
-            # Clean Google Drive link
-            if "drive.google.com" in link and file_id_match and page_match and "preview?page=" not in link:
+            if "drive.google.com" in link and file_id_match:
                 file_id = file_id_match.group(1)
-                page = page_match.group(1)
-                clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
+                clean_link = f"https://drive.google.com/file/d/{file_id}/view"
                 link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-
-            # Fallback: malformed double-wrapped drive link
             elif citation and link:
-                nested_match = re.search(r'https:\/\/drive\.google\.com\/file\/d\/https:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)', link)
-                if nested_match and page_match:
-                    file_id = nested_match.group(1)
-                    page = page_match.group(1)
-                    clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
-                    link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-                else:
-                    link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+                link_html = f'<a href="{link}" target="_blank">{citation}</a>'
             else:
                 link_html = citation
 
@@ -63,7 +50,7 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
-# Build GPT prompt
+# GPT prompt builder
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
@@ -93,7 +80,7 @@ Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
 Final Answer:
 """
 
-# Vector and fallback match
+# Vector and fallback matching
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -112,6 +99,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
+    # Fallback match if < 5
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -140,7 +128,7 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return clauses
 
-# Main response generator
+# Main responder
 def answer_question(question, tags=None, mode="default", structure_type=None,
                     concern_level=None, output_format="markdown"):
 
