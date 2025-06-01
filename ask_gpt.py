@@ -28,7 +28,7 @@ def format_clauses_for_prompt(clauses):
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
 
-            # ✅ Final link logic — trust existing shared link as-is
+            # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
@@ -52,8 +52,7 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
         if no_matches else ""
     )
 
-    return f"""
-You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
+    return f"""You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
 
 Resident Question:
 {question}
@@ -63,9 +62,9 @@ Below are relevant Clause matches:
 {clause_text}
 
 Write your response in this format:
-1. Brief summary of each Clause that might apply  
-2. State whether the rules clearly answer the question  
-3. If unclear, suggest checking with the ARC  
+1. Brief summary of each Clause that might apply
+2. State whether the rules clearly answer the question
+3. If unclear, suggest checking with the ARC
 4. Always close with: “If you have any other questions, feel free to ask!”
 
 Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
@@ -94,7 +93,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Fallback match if too few
+    # Step 2: fallback if needed
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -103,36 +102,34 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             query = query.eq("structure_type", structure_type)
         if concern_level:
             query = query.eq("concern_level", concern_level)
-        fallback_matches = query.limit(5).execute().data or []
-        for clause in fallback_matches:
-            clause["match_source"] = "Tag + Keyword Fallback"
+        fallback_matches = query.limit(5).execute()
+        for clause in fallback_matches.data or []:
+            clause["match_source"] = "Keyword Fallback"
             clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-        vector_matches += fallback_matches
+        vector_matches += fallback_matches.data or []
 
     return vector_matches
 
-# Generic fallback source
+# Soft fallback if nothing matches
 def fetch_soft_fallback_clauses():
-    query = supabase.from_("clauses").select("*").contains("tags", [
-        "approval", "structure", "location", "visibility", "placement"
-    ]).limit(5)
+    general_tags = ["approval", "structure", "location", "visibility", "placement"]
+    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
     result = query.execute()
-    clauses = result.data or []
-    for clause in clauses:
+    for clause in result.data or []:
         clause["match_source"] = "General Soft Fallback"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-    return clauses
+    return result.data
 
-# Main GPT-powered answer builder
-def answer_question(question, tags=None, mode="default", structure_type=None,
-                    concern_level=None, output_format="markdown"):
-
+# Main endpoint logic
+def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
-        question, tags=tags,
+        question,
+        tags=tags,
         structure_type=structure_type,
         concern_level=concern_level
     )
 
+    # De-dupe based on match_source
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
@@ -159,6 +156,9 @@ def answer_question(question, tags=None, mode="default", structure_type=None,
 
     final_answer = gpt_response.choices[0].message.content
 
+    # ✅ Fix malformed markdown link formatting like [Page 13] (url)
+    final_answer = re.sub(r"\[(.*?)\] \(", r"[\1](", final_answer)
+
     if output_format == "json":
         return {
             "question": question,
@@ -169,3 +169,4 @@ def answer_question(question, tags=None, mode="default", structure_type=None,
         }
 
     return f"{final_answer}<br><br>{clause_text}"
+
