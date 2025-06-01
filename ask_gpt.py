@@ -28,14 +28,9 @@ def format_clauses_for_prompt(clauses):
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
 
-            # ✅ New logic: only link to the base document
-            file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
-            if "drive.google.com" in link and file_id_match:
-                file_id = file_id_match.group(1)
-                clean_link = f"https://drive.google.com/file/d/{file_id}/view"
-                link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-            elif citation and link:
-                link_html = f'<a href="{link}" target="_blank">{citation}</a>'
+            # ✅ Final link logic — trust existing shared link as-is
+            if citation and link:
+                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
                 link_html = citation
 
@@ -50,7 +45,7 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
-# GPT prompt builder
+# Prompt generator
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
@@ -80,7 +75,7 @@ Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
 Final Answer:
 """
 
-# Vector and fallback matching
+# Vector + tag fallback matching
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -99,7 +94,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Fallback match if < 5
+    # Fallback match if too few
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -116,7 +111,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     return vector_matches
 
-# Generic fallback clauses
+# Generic fallback source
 def fetch_soft_fallback_clauses():
     query = supabase.from_("clauses").select("*").contains("tags", [
         "approval", "structure", "location", "visibility", "placement"
@@ -128,7 +123,7 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return clauses
 
-# Main responder
+# Main GPT-powered answer builder
 def answer_question(question, tags=None, mode="default", structure_type=None,
                     concern_level=None, output_format="markdown"):
 
