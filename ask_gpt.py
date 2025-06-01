@@ -32,16 +32,28 @@ def format_clauses_for_prompt(clauses):
             page_match = re.search(r'pg(?:\.|age)?\s*(\d{1,2})', citation, re.I)
             file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', link)
 
-            # ✅ Fix malformed Drive links if possible
-            if "drive.google.com" in link and file_id_match and page_match:
+            # Construct preview link only if it's a Drive link and we can extract file ID + page number
+            if (
+                "drive.google.com" in link
+                and file_id_match
+                and page_match
+                and "preview?page=" not in link  # Prevent double-appending
+            ):
                 file_id = file_id_match.group(1)
                 page = page_match.group(1)
                 clean_link = f"https://drive.google.com/file/d/{file_id}/preview?page={page}"
                 link_html = f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+
+            # Leave intact if already correct
+            elif "drive.google.com" in link and "preview?page=" in link:
+                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+
+            # Fallback: default link usage
             elif citation and link:
                 link_html = f'<a href="{link}" target="_blank">{citation}</a>'
             else:
                 link_html = citation
+
 
             entry = (
                 f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
