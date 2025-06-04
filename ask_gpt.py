@@ -39,7 +39,7 @@ def format_clauses_for_prompt(clauses):
     formatted = []
     idx = 1
     for doc, group in grouped.items():
-        group = sorted(group, key=lambda c: c.get("precedence_level", 99))
+        group = sorted(group, key=lambda c: int(c.get("precedence_level", 99)))
         for c in group:
             citation = c.get("citation", f"Clause {idx}")
             link = c.get("link", None)
@@ -48,12 +48,14 @@ def format_clauses_for_prompt(clauses):
             clause_id = c.get("clause_id", "")
             doc_label = c.get("document", "Unknown Document")
 
-            precedence = c.get("precedence_level")
-            if precedence is None:
-                precedence_label = "📎 Unclassified – No Precedence Assigned"
-            else:
-                precedence_label = get_precedence_label(precedence)
+            # Normalize precedence and fetch label
+            try:
+                precedence = int(c.get("precedence_level", 99))
+            except:
+                precedence = 99
+            precedence_label = get_precedence_label(precedence)
 
+            # Create citation link
             if link and link.startswith("http"):
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
