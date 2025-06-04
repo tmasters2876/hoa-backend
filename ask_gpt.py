@@ -46,10 +46,17 @@ def format_clauses_for_prompt(clauses):
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            precedence = c.get("precedence_level", None)
-            precedence_label = get_precedence_label(precedence)
             doc_label = c.get("document", "Unknown Document")
 
+            # Get precedence level safely
+            raw_level = c.get("precedence_level")
+            try:
+                precedence = int(raw_level)
+            except:
+                precedence = None
+            precedence_label = get_precedence_label(precedence) if precedence is not None else "📎 Unclassified – No Precedence Assigned"
+
+            # Format citation with link
             if link and link.startswith("http"):
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
@@ -57,8 +64,8 @@ def format_clauses_for_prompt(clauses):
 
             entry = (
                 f"{link_html}<br>"
-                f"<strong>{precedence_label}</strong><br>"
                 f"<strong>📂 Source Document:</strong> {doc_label}<br>"
+                f"<strong>{precedence_label}</strong><br>"
                 f"<strong>Summary of Clause:</strong> {summary}<br>"
                 f"<em><strong>Matched Source:</strong> {source}</em><br>"
                 f"<code><strong>Reviewer ID:</strong> {clause_id}</code><br><br>"
