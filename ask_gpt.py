@@ -12,6 +12,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
+# Label precedence levels
 def get_precedence_label(level):
     if level == 1:
         return "🏛️ State Law – Highest Authority"
@@ -31,7 +32,7 @@ def get_precedence_label(level):
         return "🔧 ARC Note – Lowest Authority"
     return "📎 Unclassified – No Precedence Assigned"
 
-# Format clauses for GPT
+# Format GPT clause prompt
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -48,7 +49,8 @@ def format_clauses_for_prompt(clauses):
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
             precedence = c.get("precedence_level", None)
-            label = get_precedence_label(precedence) if precedence else ""
+            precedence_label = get_precedence_label(precedence) if precedence else ""
+            doc_label = c.get("document", "Unknown Document")
 
             if link and link.startswith("http"):
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
@@ -57,7 +59,8 @@ def format_clauses_for_prompt(clauses):
 
             entry = (
                 f"{link_html}<br>"
-                f"<strong>{label}</strong><br>" if label else "" +
+                f"<strong>{precedence_label}</strong><br>"
+                f"<strong>📂 Source Document:</strong> {doc_label}<br>"
                 f"<strong>Summary of Clause:</strong> {summary}<br>"
                 f"<em><strong>Matched Source:</strong> {source}</em><br>"
                 f"<code><strong>Reviewer ID:</strong> {clause_id}</code><br><br>"
@@ -67,7 +70,7 @@ def format_clauses_for_prompt(clauses):
 
     return "\n".join(formatted)
 
-# Prompt builder
+# Build prompt
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "📎 There were no direct matches to this question. "
@@ -92,7 +95,7 @@ Use HTML for citations like this: <a href="link" target="_blank">Link</a>.
 {clause_text}
 """
 
-# Clause matcher
+# Match clauses
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -114,7 +117,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             unique_clauses[clause["clause_id"]] = clause
         return list(unique_clauses.values())
 
-    # Soft fallback
+    # Fallback logic
     query = supabase.from_("clauses").select("*")
     if tags: query = query.contains("tags", tags)
     if structure_type: query = query.eq("structure_type", structure_type)
@@ -125,7 +128,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Keyword Fallback"
     return fallback_matches
 
-# Main entry point
+# Main function
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question, tags=tags, structure_type=structure_type, concern_level=concern_level
