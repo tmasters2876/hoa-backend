@@ -35,13 +35,14 @@ def format_clauses_for_prompt(clauses):
     formatted = []
     idx = 1
     for doc, group in grouped.items():
+        sorted_group = sorted(group, key=lambda c: int(c.get("precedence_level", 99)))
         for c in group:
             citation = c.get("citation", f"Clause {idx}")
             link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            precedence = get_precedence_label(int(c.get("precedence_level", 99)))
+            precedence = get_precedence_label(c.get("precedence_level"))
 
 
             # ✅ Final link logic – trust existing shared link as-is
