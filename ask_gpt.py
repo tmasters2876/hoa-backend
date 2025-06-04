@@ -12,7 +12,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Precedence label map
+# Precedence label mapper
 def get_precedence_label(level):
     if level == 1:
         return "🏛️ State Law – Highest Authority"
@@ -32,38 +32,39 @@ def get_precedence_label(level):
         return "🔧 ARC Note – Lowest Authority"
     return "📎 Unknown Source"
 
-# Format clauses for GPT prompt
+# Format for GPT prompt
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
         grouped[clause.get("document", "Other")].append(clause)
 
-    # Sort all clauses by precedence
-    sorted_clauses = sorted(clauses, key=lambda x: x.get("precedence_level", 99))
-
     formatted = []
     idx = 1
-    for clause in sorted_clauses:
-        citation = clause.get("citation", f"[Clause {idx}]")
-        summary = clause.get("plain_summary", "No summary provided.")
-        source = clause.get("match_source", "Unknown")
-        clause_id = clause.get("clause_id", "")
-        precedence_label = get_precedence_label(clause.get("precedence_level"))
+    for doc, group in grouped.items():
+        # Sort each group by precedence level (lowest first)
+        group = sorted(group, key=lambda c: c.get("precedence_level", 99))
+        for c in group:
+            citation = c.get("citation", f"Clause {idx}")
+            summary = c.get("plain_summary", "No summary provided.")
+            source = c.get("match_source", "Unknown")
+            clause_id = c.get("clause_id", "")
+            precedence = get_precedence_label(c.get("precedence_level", None))
+            link = c.get("link", None)
 
-        if citation and citation.startswith("http"):
-            link_html = f'<a href="{citation}" target="_blank" rel="noopener noreferrer">[citation]</a>'
-        else:
-            link_html = citation
+            if link and link.startswith("http"):
+                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+            else:
+                link_html = citation
 
-        entry = (
-            f"{link_html}<br>"
-            f"<strong>{precedence_label}</strong><br>"
-            f"<strong>Summary of Clause:</strong> {summary}<br>"
-            f"<em><strong>Matched Source:</strong> {source}</em><br>"
-            f"<code><strong>Reviewer ID:</strong> {clause_id}</code><br><br>"
-        )
-        formatted.append(entry)
-        idx += 1
+            entry = (
+                f"{link_html}<br>"
+                f"<strong>{precedence}</strong><br>"
+                f"<strong>Summary of Clause:</strong> {summary}<br>"
+                f"<em><strong>Matched Source:</strong> {source}</em><br>"
+                f"<code><strong>Reviewer ID:</strong> {clause_id}</code><br><br>"
+            )
+            formatted.append(entry)
+            idx += 1
 
     return "\n".join(formatted)
 
@@ -74,7 +75,6 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
         "Below are general HOA rules that might still help you respond.<br><br>"
         if no_matches else ""
     )
-
     return f"""You are an HOA policy assistant. Based on the provided Clause Data, answer the resident's question in clear, friendly, and accurate language.
 
 {fallback_msg}
@@ -88,11 +88,11 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
 3. If unclear, suggest checking with the ARC  
 4. Always close with: "If you have any other questions, feel free to ask!"
 
-Use HTML for citations like this: `<a href="link" target="_blank">Link</a>`.
+Use HTML for citations like this: <a href="link" target="_blank">Link</a>.
 {clause_text}
 """
 
-# Vector + fallback clause matcher
+# Matching logic
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -125,7 +125,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Keyword Fallback"
     return fallback_matches
 
-# Main entry point
+# Main function
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question, tags=tags, structure_type=structure_type, concern_level=concern_level
@@ -154,8 +154,9 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     )
 
     final_answer = gpt_response.choices[0].message.content
+    final_answer = re.sub(r"(\*\*.+?\*\*)\s*\n", r"\1<br>", final_answer)
+    final_answer = re.sub(r"\n\d+\.", "<br><br>", final_answer)
 
-    # Format response safely
     if output_format == "json":
         return {
             "question": question,
