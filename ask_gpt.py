@@ -48,15 +48,12 @@ def format_clauses_for_prompt(clauses):
             clause_id = c.get("clause_id", "")
             doc_label = c.get("document", "Unknown Document")
 
-            # Get precedence level safely
-            raw_level = c.get("precedence_level")
-            try:
-                precedence = int(raw_level)
-            except:
-                precedence = None
-            precedence_label = get_precedence_label(precedence) if precedence is not None else "📎 Unclassified – No Precedence Assigned"
+            precedence = c.get("precedence_level")
+            if precedence is None:
+                precedence_label = "📎 Unclassified – No Precedence Assigned"
+            else:
+                precedence_label = get_precedence_label(precedence)
 
-            # Format citation with link
             if link and link.startswith("http"):
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
