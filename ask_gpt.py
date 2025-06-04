@@ -12,6 +12,20 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
+# Precedence label resolver
+def get_precedence_label(level):
+    labels = {
+        1: "🏛️ State Law – Highest Authority",
+        2: "🏛️ County Resolution – Legally Binding",
+        3: "📜 Declaration – Foundational HOA Rule",
+        4: "📘 Amendment – Overrides Prior Rules",
+        5: "📁 Corporate Docs – Internal Governance",
+        6: "📄 Board Resolution – Board-Enforced Policy",
+        7: "📝 Builder Guideline – Design-Only Reference",
+        8: "🔧 ARC Note – Lowest Authority"
+    }
+    return labels.get(level, "📎 Unknown Source")
+
 # Format clauses for GPT prompt
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
@@ -27,6 +41,7 @@ def format_clauses_for_prompt(clauses):
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
+            precedence = get_precedence_label(c.get("precedence_level"))
 
             # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
@@ -37,6 +52,7 @@ def format_clauses_for_prompt(clauses):
             entry = (
                 f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
                 f"<strong>Match Source</strong>: {source} • "
+                f"<strong>Precedence</strong>: {precedence} • "
                 f"<code>{doc}</code> • "
                 f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
             )
@@ -165,7 +181,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     final_answer = gpt_response.choices[0].message.content
 
     # ✅ Fix malformed markdown link formatting like [Page 13] (url)
-    final_answer = re.sub(r"\[(.*?)\] \(", r"[\1](", final_answer)
+    final_answer = re.sub(r"\[(.*?)\] \((.*?)\)", r"\1 \2", final_answer)
 
     if output_format == "json":
         return {
