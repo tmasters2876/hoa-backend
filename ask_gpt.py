@@ -14,6 +14,10 @@ supabase = create_client(supabase_url, supabase_key)
 
 # Precedence label resolver
 def get_precedence_label(level):
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        return "📎 Unknown Source"
     labels = {
         1: "🏛️ State Law – Highest Authority",
         2: "🏛️ County Resolution – Legally Binding",
@@ -25,6 +29,7 @@ def get_precedence_label(level):
         8: "🔧 ARC Note – Lowest Authority"
     }
     return labels.get(level, "📎 Unknown Source")
+
 
 # Format clauses for GPT prompt
 def format_clauses_for_prompt(clauses):
@@ -42,7 +47,8 @@ def format_clauses_for_prompt(clauses):
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            precedence = get_precedence_label(c.get("precedence_level"))
+            precedence = get_precedence_label(int(c.get("precedence_level", 99)))
+
 
 
             # ✅ Final link logic – trust existing shared link as-is
