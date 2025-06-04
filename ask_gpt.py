@@ -12,6 +12,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
+# Precedence label mapping
 def get_precedence_label(level):
     if level == 1:
         return "🏛️ State Law – Highest Authority"
@@ -31,6 +32,7 @@ def get_precedence_label(level):
         return "🔧 ARC Note – Lowest Authority"
     return "📎 Unclassified – No Precedence Assigned"
 
+# Format clause summaries
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -39,53 +41,38 @@ def format_clauses_for_prompt(clauses):
     formatted = []
     idx = 1
     for doc, group in grouped.items():
-        try:
-            group = sorted(group, key=lambda c: int(c["precedence_level"]) if c.get("precedence_level") else 99)
-        except Exception:
-            group = sorted(group, key=lambda c: 99)
-
+        group = sorted(group, key=lambda c: c.get("precedence_level", 99))
         for c in group:
             citation = c.get("citation", f"Clause {idx}")
-            link = c.get("link", None)
+            link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            doc_label = c.get("document", "Unknown Document")
+            level = c.get("precedence_level", None)
+            label = get_precedence_label(level)
 
-            level = c.get("precedence_level")
-            try:
-                # Strict cast only if int-like and not null
-                level_val = int(level) if level is not None and str(level).isdigit() else None
-            except:
-                level_val = None
-
-            precedence_label = get_precedence_label(level_val)
-
-            if link and link.startswith("http"):
+            if link.startswith("http"):
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
                 link_html = citation
 
             entry = (
                 f"{link_html}<br>"
-                f"<strong>📂 Source Document:</strong> {doc_label}<br>"
-                f"<strong>{precedence_label}</strong><br>"
+                f"<strong>{label}</strong><br>"
                 f"<strong>Summary of Clause:</strong> {summary}<br>"
                 f"<em><strong>Matched Source:</strong> {source}</em><br>"
                 f"<code><strong>Reviewer ID:</strong> {clause_id}</code><br><br>"
             )
             formatted.append(entry)
             idx += 1
-
     return "\n".join(formatted)
 
+# Prompt builder
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
-        "📎 There were no direct matches to this question. "
-        "Below are general HOA rules that might still help you respond.<br><br>"
+        "📎 There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
         if no_matches else ""
     )
-
     return f"""You are an HOA policy assistant. Based on the provided Clause Data, answer the resident's question in clear, friendly, and accurate language.
 
 {fallback_msg}
@@ -103,6 +90,7 @@ Use HTML for citations like this: <a href="link" target="_blank">Link</a>.
 {clause_text}
 """
 
+# Clause matcher
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -124,6 +112,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             unique_clauses[clause["clause_id"]] = clause
         return list(unique_clauses.values())
 
+    # Keyword fallback
     query = supabase.from_("clauses").select("*")
     if tags: query = query.contains("tags", tags)
     if structure_type: query = query.eq("structure_type", structure_type)
@@ -134,6 +123,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Keyword Fallback"
     return fallback_matches
 
+# Main entrypoint
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question, tags=tags, structure_type=structure_type, concern_level=concern_level
@@ -142,6 +132,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(raw_clauses)
     no_matches = len(raw_clauses) == 0
 
+    # Whimsy handler
     whimsy_keywords = ['dragon', 'castle', 'moat', 'wizard', 'unicorn', 'magic', 'fortress', 'fairy', 'goblin']
     if any(word in question.lower() for word in whimsy_keywords):
         clause_text = (
