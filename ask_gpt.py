@@ -41,7 +41,8 @@ def format_clauses_for_prompt(clauses):
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            precedence = get_precedence_label(c.get("precedence_level"))
+            precedence = get_precedence_label(int(c.get("precedence_level", 99)))
+
 
             # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
