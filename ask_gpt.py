@@ -47,7 +47,7 @@ def format_clauses_for_prompt(clauses):
 # Prompt generator
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
-        "⚠️ There were no direct matches to this question. Below are general HOA "
+        "\u26a0\ufe0f There were no direct matches to this question. Below are general HOA "
         "rules that might still help you respond.<br><br>"
         if no_matches else ""
     )
@@ -64,9 +64,9 @@ Write your response in this format:
 1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
 3. If unclear, suggest checking with the ARC
-4. Always close with: "If you have any other questions, feel free to ask!"
+4. Always close with: \"If you have any other questions, feel free to ask!\"
 
-Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
+Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
 """
 
 # Vector + tag fallback matching
@@ -133,7 +133,8 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
             unique_clauses[cid] = clause
 
     no_matches = False
-    if not clauses := list(unique_clauses.values()):
+    clauses = list(unique_clauses.values())
+    if not clauses:
         clauses = fetch_soft_fallback_clauses()
         no_matches = True
 
@@ -143,7 +144,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     # Minor injection for whimsical questions
     whimsical_keywords = ["dragon", "castle", "meat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
     if any(word in question.lower() for word in whimsical_keywords):
-        prompt = f"🌈 Note: This question appears whimsical or fantastical (e.g., involving dragons or meat).\n\n" \
+        prompt = f"\U0001f308 Note: This question appears whimsical or fantastical (e.g., involving dragons or meat).\n\n" \
                  f"Please respond with a brief, friendly touch of humor before returning to the HOA’s real policies.\n\n{prompt}"
 
     gpt_response = client.chat.completions.create(
