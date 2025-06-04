@@ -41,13 +41,12 @@ def format_clauses_for_prompt(clauses):
     idx = 1
     for doc, group in grouped.items():
         sorted_group = sorted(group, key=lambda c: int(c.get("precedence_level", 99)))
-        for c in group:
+        for c in sorted_group:
             citation = c.get("citation", f"Clause {idx}")
             link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            precedence = get_precedence_label(int(c.get("precedence_level", 99)))
             raw_level = c.get("precedence_level")
             try:
                 cast_level = int(raw_level)
@@ -57,8 +56,6 @@ def format_clauses_for_prompt(clauses):
             print(f"[DEBUG] precedence raw: {raw_level} → cast: {cast_level}")
 
             precedence = get_precedence_label(cast_level)
-
-
 
             # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
