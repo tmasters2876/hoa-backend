@@ -12,7 +12,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Precedence label mapping
+# Human-readable label for precedence
 def get_precedence_label(level):
     if level == 1:
         return "🏛️ State Law – Highest Authority"
@@ -32,7 +32,7 @@ def get_precedence_label(level):
         return "🔧 ARC Note – Lowest Authority"
     return "📎 Unclassified – No Precedence Assigned"
 
-# Format clause summaries
+# Format output for GPT
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -44,30 +44,33 @@ def format_clauses_for_prompt(clauses):
         group = sorted(group, key=lambda c: c.get("precedence_level", 99))
         for c in group:
             citation = c.get("citation", f"Clause {idx}")
-            link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
+            link = c.get("link", "")
+            docname = c.get("document", "Unknown Document")
             level = c.get("precedence_level", None)
             label = get_precedence_label(level)
 
-            if link.startswith("http"):
-                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-            else:
-                link_html = citation
+            link_html = (
+                f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+                if link else citation
+            )
 
             entry = (
                 f"{link_html}<br>"
                 f"<strong>{label}</strong><br>"
+                f"<strong>Source Document:</strong> {docname}<br>"
                 f"<strong>Summary of Clause:</strong> {summary}<br>"
                 f"<em><strong>Matched Source:</strong> {source}</em><br>"
                 f"<code><strong>Reviewer ID:</strong> {clause_id}</code><br><br>"
             )
             formatted.append(entry)
             idx += 1
+
     return "\n".join(formatted)
 
-# Prompt builder
+# Prompt template
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "📎 There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
@@ -76,7 +79,6 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
     return f"""You are an HOA policy assistant. Based on the provided Clause Data, answer the resident's question in clear, friendly, and accurate language.
 
 {fallback_msg}
-
 📍 Resident Question:  
 {question}
 
@@ -90,7 +92,7 @@ Use HTML for citations like this: <a href="link" target="_blank">Link</a>.
 {clause_text}
 """
 
-# Clause matcher
+# Fetch matches
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -98,7 +100,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
     )
     query_embedding = embedding_response.data[0].embedding
 
-    response = supabase.rpc('match_clauses', {
+    response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
         "match_threshold": 0.82,
         "match_count": 8
@@ -106,24 +108,24 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     vector_matches = response.data or []
     if vector_matches:
-        unique_clauses = {}
+        unique = {}
         for clause in vector_matches:
             clause["match_source"] = "Vector Match"
-            unique_clauses[clause["clause_id"]] = clause
-        return list(unique_clauses.values())
+            unique[clause["clause_id"]] = clause
+        return list(unique.values())
 
-    # Keyword fallback
+    # Fallback: keyword
     query = supabase.from_("clauses").select("*")
     if tags: query = query.contains("tags", tags)
     if structure_type: query = query.eq("structure_type", structure_type)
     if concern_level: query = query.eq("concern_level", concern_level)
 
-    fallback_matches = query.limit(15).execute().data
+    fallback_matches = query.limit(15).execute().data or []
     for clause in fallback_matches:
         clause["match_source"] = "Keyword Fallback"
     return fallback_matches
 
-# Main entrypoint
+# Final entry point
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question, tags=tags, structure_type=structure_type, concern_level=concern_level
@@ -132,12 +134,12 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(raw_clauses)
     no_matches = len(raw_clauses) == 0
 
-    # Whimsy handler
-    whimsy_keywords = ['dragon', 'castle', 'moat', 'wizard', 'unicorn', 'magic', 'fortress', 'fairy', 'goblin']
-    if any(word in question.lower() for word in whimsy_keywords):
+    # Whimsy detection
+    whimsy_keywords = ['dragon', 'castle', 'wizard', 'unicorn', 'fairy', 'moat', 'goblin']
+    if any(w in question.lower() for w in whimsy_keywords):
         clause_text = (
-            "🧚Note: This question appears whimsical or fantastical (e.g., involving dragons or moats).<br>"
-            "We're responding with a brief, friendly touch of humor before returning to the HOA's real policies.<br><br>"
+            "🧚Note: This question appears whimsical or fantastical.<br>"
+            "Here’s a friendly response before we get back to real HOA policy.<br><br>"
         ) + clause_text
 
     prompt = build_gpt_prompt(question, clause_text, no_matches)
