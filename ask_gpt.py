@@ -22,22 +22,23 @@ def format_clauses_for_prompt(clauses):
     idx = 1
     for doc, group in grouped.items():
         for c in group:
-            citation = c.get("citation", f"clause {idx}")
+            citation = c.get("citation", f"Clause {idx}")
             link = c.get("link", "")
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
 
-            # Fix final link logic: trust existing shared link as-is
+            # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
                 link_html = citation
 
             entry = (
-                f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}</b><br>"
-                f"<strong>Match Source</strong>: {source} <br>"
-                f"<code>ID: {clause_id}</code> — <br>"
+                f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
+                f"<strong>Match Source</strong>: {source} • "
+                f"<code>{doc}</code> • "
+                f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
             )
             formatted.append(entry)
             idx += 1
@@ -47,8 +48,7 @@ def format_clauses_for_prompt(clauses):
 # Prompt generator
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
-        "\u26a0\ufe0f There were no direct matches to this question. Below are general HOA "
-        "rules that might still help you respond.<br><br>"
+        "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
         if no_matches else ""
     )
 
@@ -57,6 +57,7 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
 Resident Question:
 {question}
 
+{fallback_msg}
 Below are relevant Clause matches:
 {clause_text}
 
@@ -64,9 +65,13 @@ Write your response in this format:
 1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
 3. If unclear, suggest checking with the ARC
-4. Always close with: \"If you have any other questions, feel free to ask!\"
+4. Always close with: “If you have any other questions, feel free to ask!”
 
 Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
+
+---
+
+Final Answer:
 """
 
 # Vector + tag fallback matching
@@ -75,49 +80,48 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         model="text-embedding-ada-002",
         input=question,
     )
-
     query_embedding = embedding_response.data[0].embedding
 
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
         "match_threshold": 0.8,
         "match_count": 5
-    })
-    vector_matches = response.data
+    }).execute()
 
-    # Tag filter
+    vector_matches = response.data or []
     for clause in vector_matches:
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
     # Step 2: fallback if needed
     if len(vector_matches) < 5:
-        query = supabase.from_("clauses").select("*").like("plain_summary", f"%{question}%")
+        query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
+        if tags:
+            query = query.contains("tags", tags)
         if structure_type:
-            query = query.contains("tags", structure_type)
+            query = query.eq("structure_type", structure_type)
         if concern_level:
             query = query.eq("concern_level", concern_level)
         fallback_matches = query.limit(5).execute()
         for clause in fallback_matches.data or []:
             clause["match_source"] = "Keyword Fallback"
             clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-            vector_matches += fallback_matches.data or []
+        vector_matches += fallback_matches.data or []
 
     return vector_matches
 
-# Soft fallback for nothing matches
+# Soft fallback if nothing matches
 def fetch_soft_fallback_clauses():
-    fallback_tags = ["approval", "structure", "location", "visibility", "placement"]
-    query = supabase.from_("clauses").select("*").contains("tags", fallback_tags)
+    general_tags = ["approval", "structure", "location", "visibility", "placement"]
+    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
     result = query.execute()
-    general = result.data or []
-    for clause in general:
+    for clause in result.data or []:
         clause["match_source"] = "General Soft Fallback"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-    return general
+    return result.data
 
 # Main endpoint logic
-def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None):
+def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
     raw_clauses = fetch_matching_clauses(
         question,
         tags=tags,
@@ -128,12 +132,12 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     # De-dupe based on match_source
     unique_clauses = {}
     for clause in raw_clauses:
-        cid = clause["clause_id"]
+        cid = clause.get("clause_id")
         if cid not in unique_clauses and clause.get("match_source") == "Vector Match":
             unique_clauses[cid] = clause
+    clauses = list(unique_clauses.values())
 
     no_matches = False
-    clauses = list(unique_clauses.values())
     if not clauses:
         clauses = fetch_soft_fallback_clauses()
         no_matches = True
@@ -141,30 +145,33 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text, no_matches)
 
-    # Minor injection for whimsical questions
-    whimsical_keywords = ["dragon", "castle", "meat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
+    # 🦝 Humor injection for whimsical questions
+    whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
     if any(word in question.lower() for word in whimsical_keywords):
-        prompt = f"\U0001f308 Note: This question appears whimsical or fantastical (e.g., involving dragons or meat).\n\n" \
-                 f"Please respond with a brief, friendly touch of humor before returning to the HOA’s real policies.\n\n{prompt}"
+        prompt += (
+            "\n\nNote: This question appears whimsical or fantastical (e.g., involving dragons or moats). "
+            "Please respond with a brief, friendly touch of humor before returning to the HOA's real policies."
+        )
 
     gpt_response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are an expert HOA assistant."},
             {"role": "user", "content": prompt}
-        ]
+        ],
+        temperature=0.4
     )
 
     final_answer = gpt_response.choices[0].message.content
 
-    # Fix malformed markdown link formatting like [Page 13] (url)
-    final_answer = re.sub(r"\[(.*?)\] \((.*?)\)", r"\1 \2", final_answer)
+    # ✅ Fix malformed markdown link formatting like [Page 13] (url)
+    final_answer = re.sub(r"\[(.*?)\] \(", r"[\1](", final_answer)
 
-    if mode == "json":
+    if output_format == "json":
         return {
             "question": question,
-            "clauses": clauses,
             "answer": final_answer,
+            "clauses": clauses,
             "mode": mode,
             "format": "json"
         }
