@@ -48,6 +48,15 @@ def format_clauses_for_prompt(clauses):
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
             precedence = get_precedence_label(int(c.get("precedence_level", 99)))
+            raw_level = c.get("precedence_level")
+            try:
+                cast_level = int(raw_level)
+            except Exception as e:
+                cast_level = 99
+
+            print(f"[DEBUG] precedence raw: {raw_level} → cast: {cast_level}")
+
+            precedence = get_precedence_label(cast_level)
 
 
 
