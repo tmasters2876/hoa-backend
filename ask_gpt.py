@@ -55,13 +55,15 @@ def format_clauses_for_prompt(clauses):
 
             print(f"[DEBUG] precedence raw: {raw_level} → cast: {cast_level}")
 
-            precedence = get_precedence_label(cast_level)
+            precedence = PRECEDENCE_LABELS.get(cast_level, "📎 Unknown Source")
+    
 
             # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
                 link_html = citation
+            print(f"[DEBUG] Rendered precedence label: {precedence}")
 
             entry = (
                 f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
