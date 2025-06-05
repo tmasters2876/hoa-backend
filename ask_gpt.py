@@ -93,9 +93,6 @@ Resident Question:
 {fallback_msg}{precedence_hint}
 Below are relevant Clause matches:
 {clause_text}
-...
-"""
-
 
 Write your response in this format:
 1. Brief summary of each Clause that might apply
