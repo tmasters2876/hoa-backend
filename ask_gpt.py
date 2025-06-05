@@ -78,13 +78,13 @@ def format_clauses_for_prompt(clauses):
 
 # Prompt generator
 def build_gpt_prompt(question, clause_text, no_matches=False):
-    fallback_warning = "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
-    precedence_hint = "📘 Note: Clauses below are listed in order of increasing legal authority (lowest to highest).<br><br>"
+    fallback_msg = ""
+    if no_matches:
+        fallback_msg = (
+            "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
+            "📘 Note: Clauses below are listed in order of increasing legal authority (lowest to highest).<br><br>"
+        )
 
-    fallback_msg = (
-        fallback_warning + precedence_hint
-        if no_matches else ""
-    )
 
 
     return f"""You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
