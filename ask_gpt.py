@@ -55,7 +55,8 @@ def format_clauses_for_prompt(clauses):
 
             print(f"[DEBUG] precedence raw: {raw_level} → cast: {cast_level}")
 
-            precedence = PRECEDENCE_LABELS.get(cast_level, "📎 Unknown Source")
+            precedence = get_precedence_label(cast_level)
+
     
 
             # ✅ Final link logic – trust existing shared link as-is
