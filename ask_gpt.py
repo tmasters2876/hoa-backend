@@ -55,7 +55,8 @@ def format_clauses_for_prompt(clauses):
 
             print(f"[DEBUG] precedence raw: {raw_level} → cast: {cast_level}")
 
-            precedence = get_precedence_label(cast_level)
+            precedence = f"Level {cast_level}"
+
 
             # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
@@ -79,6 +80,8 @@ def format_clauses_for_prompt(clauses):
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
+        precedence_hint = "📘 Note: Clauses below are listed in order of increasing legal authority (lowest to highest).<br><br>"
+
         if no_matches else ""
     )
 
@@ -87,9 +90,12 @@ def build_gpt_prompt(question, clause_text, no_matches=False):
 Resident Question:
 {question}
 
-{fallback_msg}
+{fallback_msg}{precedence_hint}
 Below are relevant Clause matches:
 {clause_text}
+...
+"""
+
 
 Write your response in this format:
 1. Brief summary of each Clause that might apply
