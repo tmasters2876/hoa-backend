@@ -12,7 +12,7 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Precedence label resolver
+# Precedence label resolver (no longer used in output)
 def get_precedence_label(level):
     try:
         level = int(level)
@@ -50,26 +50,19 @@ def format_clauses_for_prompt(clauses):
             raw_level = c.get("precedence_level")
             try:
                 cast_level = int(raw_level)
-            except Exception as e:
+            except Exception:
                 cast_level = 99
 
-            print(f"[DEBUG] precedence raw: {raw_level} → cast: {cast_level}")
+            # precedence = get_precedence_label(cast_level)  # removed from output
 
-            precedence = get_precedence_label(cast_level)
-
-    
-
-            # ✅ Final link logic – trust existing shared link as-is
             if citation and link:
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
             else:
                 link_html = citation
-            print(f"[DEBUG] Rendered precedence label: {precedence}")
 
             entry = (
                 f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
                 f"<strong>Match Source</strong>: {source} • "
-                f"<strong>Precedence</strong>: {precedence} • "
                 f"<code>{doc}</code> • "
                 f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
             )
@@ -126,7 +119,6 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         clause["match_source"] = "Vector Match"
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
 
-    # Step 2: fallback if needed
     if len(vector_matches) < 5:
         query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
         if tags:
@@ -162,7 +154,6 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         concern_level=concern_level
     )
 
-    # De-dupe based on match_source
     unique_clauses = {}
     for clause in raw_clauses:
         cid = clause.get("clause_id")
@@ -178,7 +169,6 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text, no_matches)
 
-    # 🦝 Humor injection for whimsical questions
     whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
     if any(word in question.lower() for word in whimsical_keywords):
         prompt += (
@@ -196,8 +186,6 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     )
 
     final_answer = gpt_response.choices[0].message.content
-
-    # ✅ Fix malformed markdown link formatting like [Page 13] (url)
     final_answer = re.sub(r"\[(.*?)\] \((.*?)\)", r"\1 \2", final_answer)
 
     if output_format == "json":
