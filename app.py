@@ -2,6 +2,7 @@ from flask_cors import CORS
 from flask import Flask, request, jsonify
 from ask_gpt import answer_question
 import os
+import requests  # For logging to Google Sheets
 
 app = Flask(__name__)
 CORS(app)
@@ -29,6 +30,23 @@ def ask():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/log", methods=["POST"])
+def log_to_google_sheets():
+    try:
+        data = request.json
+        payload = {
+            "question": data.get("question", ""),
+            "answer": data.get("answer", ""),
+            "ip": data.get("ip", "N/A")
+        }
+        res = requests.post(
+            "https://script.google.com/macros/s/AKfycbxMrY1STPSvA4xC96xxiDHXo08YRGYWp6_BqJ6qNKkz0OnOhUJDH9O8o7O5jecIPbmU/exec",
+            json=payload
+        )
+        return {"status": "logged", "code": res.status_code}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
