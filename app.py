@@ -1,4 +1,4 @@
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from flask import Flask, request, jsonify
 from ask_gpt import answer_question
 import os
@@ -32,6 +32,7 @@ def ask():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/log", methods=["POST"])
+@cross_origin()  # ✅ Enables CORS for Carrd's POST logging
 def log_to_google_sheets():
     try:
         data = request.json
@@ -52,3 +53,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"✅ Server starting on port {port}...")
     app.run(debug=False, host="0.0.0.0", port=port)
+
