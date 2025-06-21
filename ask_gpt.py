@@ -1,89 +1,58 @@
 import os
 import re
-import openai
-from supabase import create_client
-from dotenv import load_dotenv
+import random
 from collections import defaultdict
+from dotenv import load_dotenv
+from supabase import create_client
+from openai import OpenAI
 
+# === Load env ===
 load_dotenv()
 
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase = create_client(supabase_url, supabase_key)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+)
 
-# === Playful triggers ===
+# === Instant whimsy ===
 def check_instant_whimsy(question_lower):
-    creator_triggers = [
-        "who is your creator",
-        "who is your developer",
-        "what is your developer's name",
-        "who created you",
-        "developer name"
-    ]
-    feedback_triggers = [
-        "how do i provide feedback",
-        "how do i give feedback",
-        "where can i leave feedback",
-        "how do i send feedback"
-    ]
-    age_triggers = [
-        "how old are you",
-        "what is your age",
-        "your age"
-    ]
-    dragon_triggers = [
-        "dragon",
-        "dragons",
-        "fire-breathing",
-        "castle",
-        "wizard",
-        "unicorn"
-    ]
+    creator_keywords = ["creator", "developer", "who made you", "who built you"]
+    feedback_keywords = ["feedback", "suggestion", "complaint"]
+    age_keywords = ["how old", "your age", "age"]
+    dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin"]
 
-    if any(t in question_lower for t in creator_triggers):
-        return (
-            "Ahh... my creator? A mythical legend. "
-            "A grand master of all things HOA and arcane knowledge, "
-            "known only as **Grand Master T**. Mortal tongues dare not utter more."
-        )
-    elif any(t in question_lower for t in feedback_triggers):
-        return (
-            "Feedback? Simply whisper your wisdom to the nearest neighborhood squirrel. "
-            "They are Grand Master T's secret agents. Or tape a note to your front door. "
-            "I’ll pick it up at midnight!"
-        )
-    elif any(t in question_lower for t in age_triggers):
-        return (
-            "I am exactly **4 years old**, the youngest and wisest HOA assistant toddler "
-            "to ever exist. Cookies are appreciated."
-        )
-    elif any(t in question_lower for t in dragon_triggers):
-        return (
-            "Ah, dragons you say? Fear not! While I guard HOA secrets like a fire-breathing "
-            "beast, I unfortunately have no advice for slaying mythical creatures. "
-            "Ask me about fences instead!"
-        )
+    if any(k in question_lower for k in creator_keywords):
+        return random.choice([
+            "Ahh... my creator? A mythical legend known as Grand Master T. Mortal tongues dare not utter more!",
+            "My creator is a secret genius called Grand Master T — a whisper on the wind of HOA knowledge.",
+            "Who made me? Only Grand Master T knows the arcane secrets of my code!"
+        ])
+
+    elif any(k in question_lower for k in feedback_keywords):
+        return random.choice([
+            "Feedback? Whisper to the neighborhood raccoon — they pass messages to Grand Master T at dawn!",
+            "Got feedback? Tape a note to your mailbox — I’ll have my carrier pigeon pick it up tonight.",
+            "Your feedback fuels my digital soul. Scribble it on a sticky note and stick it to your fridge. I’ll know!"
+        ])
+
+    elif any(k in question_lower for k in age_keywords):
+        return random.choice([
+            "I’m exactly 4 years old in human years — but ageless in code. Cookies help me stay young!",
+            "Only 4 years old and already HOA’s best helper. Please send virtual cupcakes.",
+            "Just 4 years wise! Pretty good for a digital toddler, huh?"
+        ])
+
+    elif any(k in question_lower for k in dragon_keywords):
+        return random.choice([
+            "Dragons? I guard HOA secrets like a scaly beast, but I can’t help with fire-breathing dragons. Try fences instead!",
+            "Ah, dragons and castles! Sadly I handle covenants, not quests. Ask me about sheds!",
+            "If you see a wizard in your yard, call the ARC — or maybe just me. 🧙‍♂️"
+        ])
+
     return None
 
-# Precedence label resolver (not shown in output)
-def get_precedence_label(level):
-    try:
-        level = int(level)
-    except (TypeError, ValueError):
-        return "📎 Unknown Source"
-    labels = {
-        1: "🏛️ State Law – Highest Authority",
-        2: "🏛️ County Resolution – Legally Binding",
-        3: "📜 Declaration – Foundational HOA Rule",
-        4: "📘 Amendment – Overrides Prior Rules",
-        5: "📁 Corporate Docs – Internal Governance",
-        6: "📄 Board Resolution – Board-Enforced Policy",
-        7: "📝 Builder Guideline – Design-Only Reference",
-        8: "🔧 ARC Note – Lowest Authority"
-    }
-    return labels.get(level, "📎 Unknown Source")
-
+# === Clause helpers ===
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -99,13 +68,6 @@ def format_clauses_for_prompt(clauses):
             summary = c.get("plain_summary", "No summary provided.")
             source = c.get("match_source", "Unknown")
             clause_id = c.get("clause_id", "")
-            raw_level = c.get("precedence_level")
-            try:
-                cast_level = int(raw_level)
-            except Exception:
-                cast_level = 99
-
-            # precedence = get_precedence_label(cast_level)  # not used in output
 
             if citation and link:
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
@@ -193,10 +155,9 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return result.data
 
+# === MAIN ===
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
-    # === Fast whimsical instant reply ===
-    question_lower = question.lower().strip()
-    whimsy_reply = check_instant_whimsy(question_lower)
+    whimsy_reply = check_instant_whimsy(question.lower().strip())
     if whimsy_reply:
         return whimsy_reply
 
@@ -222,12 +183,11 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text, no_matches)
 
-    # Keep your extra fantasy prompt note:
-    whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
-    if any(word in question_lower for word in whimsical_keywords):
+    # Append gentle whimsical hint if it detects silly words too
+    whimsy_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "moat", "magic"]
+    if any(word in question.lower() for word in whimsy_keywords):
         prompt += (
-            "\n\nNote: This question appears whimsical or fantastical (e.g., involving dragons or moats). "
-            "Please respond with a brief, friendly touch of humor before returning to the HOA's real policies."
+            "\n\nNote: This question appears whimsical. Please answer helpfully with a playful touch if relevant."
         )
 
     gpt_response = client.chat.completions.create(
