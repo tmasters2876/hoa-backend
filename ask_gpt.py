@@ -9,16 +9,28 @@ load_dotenv()
 
 # Initialize OpenAI and Supabase clients
 client = OpenAI()
-supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
-def answer_question(question):
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+if not supabase_url or not supabase_key:
+    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in environment variables!")
+
+supabase = create_client(supabase_url, supabase_key)
+
+def answer_question(question, mode=None, output_format=None):
     """
     Answers a question:
-    1) If it's a playful self-awareness question, respond with humor.
-    2) Else, run robust vector match + keyword fallback + GPT generation.
+    1) Handles playful self-awareness questions with humor.
+    2) Otherwise, runs robust vector match + keyword fallback + GPT generation.
+
+    Parameters:
+    - question (str): user question (required)
+    - mode (str): optional, for future reviewer/resident split (ignored for now)
+    - output_format (str): optional, for future plain/markdown/etc (ignored for now)
     """
 
-    # ✅ === Playful triggers block (ONLY new piece) ===
+    # === ✅ Playful triggers ===
     question_lower = question.lower().strip()
 
     creator_triggers = [
@@ -75,8 +87,11 @@ def answer_question(question):
             "Ask me about fences instead!"
         )
 
-    # ✅ === Everything below is 100% your version ===
+    # === ✅ Future: handle `mode` logic ===
+    # Example: if mode == 'reviewer': do reviewer-specific tweaks
+    # For now, no branching
 
+    # === ✅ Vector embedding ===
     try:
         embedding = client.embeddings.create(
             model="text-embedding-3-large",
@@ -161,6 +176,4 @@ def answer_question(question):
     except Exception as e:
         print(f"Error generating GPT completion: {e}")
         return (
-            "Sorry, I had trouble generating a response. "
-            "Please try again later or contact the ARC directly."
-        )
+            "Sorry, I had trouble generating a resp
