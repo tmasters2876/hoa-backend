@@ -19,8 +19,8 @@ supabase = create_client(
 def check_instant_whimsy(question_lower):
     creator_keywords = ["creator", "developer", "who made you", "who built you"]
     feedback_keywords = ["feedback", "suggestion", "complaint"]
-    age_keywords = ["how old", "your age", "age"]
-    dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin"]
+    age_keywords = ["how old", "your age", "age" , "years old"]
+    dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin" , "elf", "moat","magic"]
 
     if any(k in question_lower for k in creator_keywords):
         return random.choice([
