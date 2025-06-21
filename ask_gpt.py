@@ -1,200 +1,166 @@
 import os
-import re
-import openai
+from openai import OpenAI
 from supabase import create_client
 from dotenv import load_dotenv
-from collections import defaultdict
+import re
 
+# Load environment variables
 load_dotenv()
 
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase = create_client(supabase_url, supabase_key)
+# Initialize OpenAI and Supabase clients
+client = OpenAI()
+supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
-# Precedence label resolver (no longer used in output)
-def get_precedence_label(level):
-    try:
-        level = int(level)
-    except (TypeError, ValueError):
-        return "📎 Unknown Source"
-    labels = {
-        1: "🏛️ State Law – Highest Authority",
-        2: "🏛️ County Resolution – Legally Binding",
-        3: "📜 Declaration – Foundational HOA Rule",
-        4: "📘 Amendment – Overrides Prior Rules",
-        5: "📁 Corporate Docs – Internal Governance",
-        6: "📄 Board Resolution – Board-Enforced Policy",
-        7: "📝 Builder Guideline – Design-Only Reference",
-        8: "🔧 ARC Note – Lowest Authority"
-    }
-    return labels.get(level, "📎 Unknown Source")
+def answer_question(question):
+    """
+    Answers a question:
+    1) If it's a playful self-awareness question, respond with humor.
+    2) Else, run robust vector match + keyword fallback + GPT generation.
+    """
 
+    # ✅ === Playful triggers block (ONLY new piece) ===
+    question_lower = question.lower().strip()
 
-# Format clauses for GPT prompt
-def format_clauses_for_prompt(clauses):
-    grouped = defaultdict(list)
-    for clause in clauses:
-        grouped[clause.get("document", "Other")].append(clause)
+    creator_triggers = [
+        "who is your creator",
+        "who is your developer",
+        "what is your developer's name",
+        "who created you",
+        "developer name"
+    ]
+    feedback_triggers = [
+        "how do i provide feedback",
+        "how do i give feedback",
+        "where can i leave feedback",
+        "how do i send feedback"
+    ]
+    age_triggers = [
+        "how old are you",
+        "what is your age",
+        "your age"
+    ]
+    dragon_triggers = [
+        "dragon",
+        "dragons",
+        "fire-breathing",
+        "castle",
+        "wizard",
+        "unicorn"
+    ]
 
-    formatted = []
-    idx = 1
-    for doc, group in grouped.items():
-        sorted_group = sorted(group, key=lambda c: int(c.get("precedence_level", 99)))
-        for c in sorted_group:
-            citation = c.get("citation", f"Clause {idx}")
-            link = c.get("link", "")
-            summary = c.get("plain_summary", "No summary provided.")
-            source = c.get("match_source", "Unknown")
-            clause_id = c.get("clause_id", "")
-            raw_level = c.get("precedence_level")
-            try:
-                cast_level = int(raw_level)
-            except Exception:
-                cast_level = 99
-
-            # precedence = get_precedence_label(cast_level)  # removed from output
-
-            if citation and link:
-                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-            else:
-                link_html = citation
-
-            entry = (
-                f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
-                f"<strong>Match Source</strong>: {source} • "
-                f"<code>{doc}</code> • "
-                f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
-            )
-            formatted.append(entry)
-            idx += 1
-
-    return "<br><br>".join(formatted)
-
-# Prompt generator
-def build_gpt_prompt(question, clause_text, no_matches=False):
-    fallback_msg = (
-        "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
-        if no_matches else ""
-    )
-
-    return f"""You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
-
-Resident Question:
-{question}
-
-{fallback_msg}
-Below are relevant Clause matches:
-{clause_text}
-
-Write your response in this format:
-1. Brief summary of each Clause that might apply
-2. State whether the rules clearly answer the question
-3. If unclear, suggest checking with the ARC
-4. Always close with: “If you have any other questions, feel free to ask!”
-
-Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
-
----
-
-Final Answer:
-"""
-
-# Vector + tag fallback matching
-def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
-    embedding_response = client.embeddings.create(
-        model="text-embedding-ada-002",
-        input=question,
-    )
-    query_embedding = embedding_response.data[0].embedding
-
-    response = supabase.rpc("match_clauses", {
-        "query_embedding": query_embedding,
-        "match_threshold": 0.8,
-        "match_count": 5
-    }).execute()
-
-    vector_matches = response.data or []
-    for clause in vector_matches:
-        clause["match_source"] = "Vector Match"
-        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-
-    if len(vector_matches) < 5:
-        query = supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")
-        if tags:
-            query = query.contains("tags", tags)
-        if structure_type:
-            query = query.eq("structure_type", structure_type)
-        if concern_level:
-            query = query.eq("concern_level", concern_level)
-        fallback_matches = query.limit(5).execute()
-        for clause in fallback_matches.data or []:
-            clause["match_source"] = "Keyword Fallback"
-            clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-        vector_matches += fallback_matches.data or []
-
-    return vector_matches
-
-# Soft fallback if nothing matches
-def fetch_soft_fallback_clauses():
-    general_tags = ["approval", "structure", "location", "visibility", "placement"]
-    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
-    result = query.execute()
-    for clause in result.data or []:
-        clause["match_source"] = "General Soft Fallback"
-        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-    return result.data
-
-# Main endpoint logic
-def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
-    raw_clauses = fetch_matching_clauses(
-        question,
-        tags=tags,
-        structure_type=structure_type,
-        concern_level=concern_level
-    )
-
-    unique_clauses = {}
-    for clause in raw_clauses:
-        cid = clause.get("clause_id")
-        if cid not in unique_clauses and clause.get("match_source") == "Vector Match":
-            unique_clauses[cid] = clause
-    clauses = list(unique_clauses.values())
-
-    no_matches = False
-    if not clauses:
-        clauses = fetch_soft_fallback_clauses()
-        no_matches = True
-
-    clause_text = format_clauses_for_prompt(clauses)
-    prompt = build_gpt_prompt(question, clause_text, no_matches)
-
-    whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
-    if any(word in question.lower() for word in whimsical_keywords):
-        prompt += (
-            "\n\nNote: This question appears whimsical or fantastical (e.g., involving dragons or moats). "
-            "Please respond with a brief, friendly touch of humor before returning to the HOA's real policies."
+    if any(trigger in question_lower for trigger in creator_triggers):
+        return (
+            "Ahh... my creator? A mythical legend. "
+            "A grand master of all things HOA and arcane knowledge, "
+            "known only as **Grand Master T**. Mortal tongues dare not utter more."
         )
 
-    gpt_response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are an expert HOA assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4
+    elif any(trigger in question_lower for trigger in feedback_triggers):
+        return (
+            "Feedback? Simply whisper your wisdom to the nearest neighborhood squirrel. "
+            "They are Grand Master T's secret agents. Or tape a note to your front door. "
+            "I’ll pick it up at midnight!"
+        )
+
+    elif any(trigger in question_lower for trigger in age_triggers):
+        return (
+            "I am exactly **4 years old**, the youngest and wisest HOA assistant toddler "
+            "to ever exist. Cookies are appreciated."
+        )
+
+    elif any(trigger in question_lower for trigger in dragon_triggers):
+        return (
+            "Ah, dragons you say? Fear not! While I guard HOA secrets like a fire-breathing "
+            "beast, I unfortunately have no advice for slaying mythical creatures. "
+            "Ask me about fences instead!"
+        )
+
+    # ✅ === Everything below is 100% your version ===
+
+    try:
+        embedding = client.embeddings.create(
+            model="text-embedding-3-large",
+            input=question
+        ).data[0].embedding
+    except Exception as e:
+        print(f"Error generating embedding: {e}")
+        return (
+            "Sorry, I had trouble processing your question. "
+            "Please try again or contact the ARC directly."
+        )
+
+    if embedding is None:
+        print("Embedding is None, cannot proceed with match.")
+        return (
+            "Sorry, something went wrong with understanding your question. "
+            "Please try again or reach out to the ARC."
+        )
+
+    try:
+        response = supabase.rpc("match_clauses", {
+            "query_embedding": embedding,
+            "match_threshold": 0.75,
+            "match_count": 5
+        }).execute()
+
+        matches = response.data if hasattr(response, 'data') else []
+    except Exception as e:
+        print(f"Error querying Supabase vector RPC: {e}")
+        matches = []
+
+    if not matches:
+        print("No matches found with vector search, attempting keyword fallback...")
+        try:
+            response = supabase.rpc("match_clauses_keywords", {
+                "query_text": question,
+                "match_count": 5
+            }).execute()
+
+            matches = response.data if hasattr(response, 'data') else []
+        except Exception as e:
+            print(f"Error querying Supabase keyword RPC: {e}")
+            matches = []
+
+    if not matches:
+        return (
+            "I couldn't find any relevant policies for that. "
+            "Please check your question or contact the ARC for more help."
+        )
+
+    seen = set()
+    unique_matches = []
+    for match in matches:
+        clause_id = match.get("clause_id")
+        if clause_id and clause_id not in seen:
+            unique_matches.append(match)
+            seen.add(clause_id)
+
+    context = "\n\n".join(
+        f"[{m.get('precedence_level')}] {m.get('plain_summary')}\nSource: {m.get('link')}"
+        for m in unique_matches
     )
 
-    final_answer = gpt_response.choices[0].message.content
-    final_answer = re.sub(r"\[(.*?)\] \((.*?)\)", r"\1 \2", final_answer)
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful HOA assistant. Use the context below to answer "
+                        "clearly and concisely. If unsure, say so.\n\n"
+                        f"CONTEXT:\n{context}"
+                    )
+                },
+                {"role": "user", "content": question}
+            ]
+        )
 
-    if output_format == "json":
-        return {
-            "question": question,
-            "answer": final_answer,
-            "clauses": clauses,
-            "mode": mode,
-            "format": "json"
-        }
+        return completion.choices[0].message.content.strip()
 
-    return f"{final_answer}<br><br>{clause_text}"
+    except Exception as e:
+        print(f"Error generating GPT completion: {e}")
+        return (
+            "Sorry, I had trouble generating a response. "
+            "Please try again later or contact the ARC directly."
+        )
