@@ -12,7 +12,61 @@ supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
-# Precedence label resolver (no longer used in output)
+# === Playful triggers ===
+def check_instant_whimsy(question_lower):
+    creator_triggers = [
+        "who is your creator",
+        "who is your developer",
+        "what is your developer's name",
+        "who created you",
+        "developer name"
+    ]
+    feedback_triggers = [
+        "how do i provide feedback",
+        "how do i give feedback",
+        "where can i leave feedback",
+        "how do i send feedback"
+    ]
+    age_triggers = [
+        "how old are you",
+        "what is your age",
+        "your age"
+    ]
+    dragon_triggers = [
+        "dragon",
+        "dragons",
+        "fire-breathing",
+        "castle",
+        "wizard",
+        "unicorn"
+    ]
+
+    if any(t in question_lower for t in creator_triggers):
+        return (
+            "Ahh... my creator? A mythical legend. "
+            "A grand master of all things HOA and arcane knowledge, "
+            "known only as **Grand Master T**. Mortal tongues dare not utter more."
+        )
+    elif any(t in question_lower for t in feedback_triggers):
+        return (
+            "Feedback? Simply whisper your wisdom to the nearest neighborhood squirrel. "
+            "They are Grand Master T's secret agents. Or tape a note to your front door. "
+            "I’ll pick it up at midnight!"
+        )
+    elif any(t in question_lower for t in age_triggers):
+        return (
+            "I am exactly **4 years old**, the youngest and wisest HOA assistant toddler "
+            "to ever exist. Cookies are appreciated."
+        )
+    elif any(t in question_lower for t in dragon_triggers):
+        return (
+            "Ah, dragons you say? Fear not! While I guard HOA secrets like a fire-breathing "
+            "beast, I unfortunately have no advice for slaying mythical creatures. "
+            "Ask me about fences instead!"
+        )
+    return None
+
+# Precedence label resolver (not shown in output)
 def get_precedence_label(level):
     try:
         level = int(level)
@@ -30,8 +84,6 @@ def get_precedence_label(level):
     }
     return labels.get(level, "📎 Unknown Source")
 
-
-# Format clauses for GPT prompt
 def format_clauses_for_prompt(clauses):
     grouped = defaultdict(list)
     for clause in clauses:
@@ -53,7 +105,7 @@ def format_clauses_for_prompt(clauses):
             except Exception:
                 cast_level = 99
 
-            # precedence = get_precedence_label(cast_level)  # removed from output
+            # precedence = get_precedence_label(cast_level)  # not used in output
 
             if citation and link:
                 link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
@@ -71,13 +123,11 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
-# Prompt generator
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
         if no_matches else ""
     )
-
     return f"""You are an HOA policy assistant. Based on the provided Clause data, answer the resident’s question in clear, friendly, and accurate language.
 
 Resident Question:
@@ -100,7 +150,6 @@ Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
 Final Answer:
 """
 
-# Vector + tag fallback matching
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -135,7 +184,6 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     return vector_matches
 
-# Soft fallback if nothing matches
 def fetch_soft_fallback_clauses():
     general_tags = ["approval", "structure", "location", "visibility", "placement"]
     query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
@@ -145,8 +193,13 @@ def fetch_soft_fallback_clauses():
         clause["clause_id"] = clause.get("clause_id") or clause.get("id")
     return result.data
 
-# Main endpoint logic
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
+    # === Fast whimsical instant reply ===
+    question_lower = question.lower().strip()
+    whimsy_reply = check_instant_whimsy(question_lower)
+    if whimsy_reply:
+        return whimsy_reply
+
     raw_clauses = fetch_matching_clauses(
         question,
         tags=tags,
@@ -169,8 +222,9 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text, no_matches)
 
+    # Keep your extra fantasy prompt note:
     whimsical_keywords = ["dragon", "castle", "moat", "wizard", "unicorn", "magic", "fortress", "fairy", "goblin"]
-    if any(word in question.lower() for word in whimsical_keywords):
+    if any(word in question_lower for word in whimsical_keywords):
         prompt += (
             "\n\nNote: This question appears whimsical or fantastical (e.g., involving dragons or moats). "
             "Please respond with a brief, friendly touch of humor before returning to the HOA's real policies."
