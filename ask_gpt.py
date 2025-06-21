@@ -176,4 +176,6 @@ def answer_question(question, mode=None, output_format=None):
     except Exception as e:
         print(f"Error generating GPT completion: {e}")
         return (
-            "Sorry, I had trouble generating a resp
+            "Sorry, I had trouble generating a response. "
+            "Please try again later or contact the ARC directly."
+        )
