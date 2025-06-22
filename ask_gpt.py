@@ -24,16 +24,14 @@ def check_instant_whimsy(question_lower):
 
     if any(k in question_lower for k in creator_keywords):
         return random.choice([
-            "Ahh... my creator? A mythical legend known as Grand Master T. Mortal tongues dare not utter more!",
-            "My creator is a secret genius called Grand Master T — a whisper on the wind of HOA knowledge.",
-            "Who made me? Only Grand Master T knows the arcane secrets of my code!"
+            "My creator was a combination of code, governing documents, and the hard work of your Board members working for you.",
+            "I was created by your fellow community members to provide you with an easy to use tool to search your governing documents."
         ])
 
     elif any(k in question_lower for k in feedback_keywords):
         return random.choice([
-            "Feedback? Whisper to the neighborhood raccoon — they pass messages to Grand Master T at dawn!",
-            "Got feedback? Tape a note to your mailbox — I’ll have my carrier pigeon pick it up tonight.",
-            "Your feedback fuels my digital soul. Scribble it on a sticky note and stick it to your fridge. I’ll know!"
+            "Currently there is not a feedback form in place.  Please check back for future enhancements.",
+            "Your feedback is important to us. Currently there is not a feedback form in place.  Please check back for future enhancements."
         ])
 
     elif any(k in question_lower for k in age_keywords):
