@@ -153,12 +153,12 @@ def fetch_soft_fallback_clauses():
     if not fallback_data:
         fallback_data = [{
             "precedence_level": "9",
-            "plain_summary": "Standard best practice: sheds should generally be located behind the fence line, out of public view, and comply with local setback requirements. Always check with the ARC.",
-            "citation": "General Shed Guideline",
+            "plain_summary": "Standard best practice: Your question is very specific; please check your governing documents or with the ARC for precise guidance.",
+            "citation": "General Guideline",
             "link": "",
             "document": "Default Fallback",
             "match_source": "Injected Fallback",
-            "clause_id": "FALLBACK_SHED"
+            "clause_id": "FALLBACK_GENERAL"
         }]
 
     return fallback_data
