@@ -19,19 +19,19 @@ supabase = create_client(
 def check_instant_whimsy(question_lower):
     creator_keywords = ["creator", "developer", "who made you", "who built you"]
     feedback_keywords = ["feedback", "suggestion", "complaint"]
-    age_keywords = ["how old", "your age", "age" , "years old"]
-    dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin" , "elf", "moat","magic"]
+    age_keywords = ["how old", "your age", "age", "years old"]
+    dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "elf", "moat", "magic"]
 
     if any(k in question_lower for k in creator_keywords):
         return random.choice([
             "My creator was a combination of code, governing documents, and the hard work of your Board members working for you.",
-            "I was created by your fellow community members to provide you with an easy to use tool to search your governing documents."
+            "I was created by your fellow community members to provide you with an easy-to-use tool to search your governing documents."
         ])
 
     elif any(k in question_lower for k in feedback_keywords):
         return random.choice([
-            "Currently there is not a feedback form in place.  Please check back for future enhancements.",
-            "Your feedback is important to us. Currently there is not a feedback form in place.  Please check back for future enhancements."
+            "Currently there is not a feedback form in place. Please check back for future enhancements.",
+            "Your feedback is important to us. Currently there is not a feedback form in place. Please check back for future enhancements."
         ])
 
     elif any(k in question_lower for k in age_keywords):
@@ -52,34 +52,32 @@ def check_instant_whimsy(question_lower):
 
 # === Clause helpers ===
 def format_clauses_for_prompt(clauses):
-    grouped = defaultdict(list)
-    for clause in clauses:
-        grouped[clause.get("document", "Other")].append(clause)
+    # ✅ NEW: Sort globally by precedence_level ascending
+    sorted_clauses = sorted(
+        clauses,
+        key=lambda c: int(c.get("precedence_level", 99))
+    )
 
     formatted = []
-    idx = 1
-    for doc, group in grouped.items():
-        sorted_group = sorted(group, key=lambda c: int(c.get("precedence_level", 99)))
-        for c in sorted_group:
-            citation = c.get("citation", f"Clause {idx}")
-            link = c.get("link", "")
-            summary = c.get("plain_summary", "No summary provided.")
-            source = c.get("match_source", "Unknown")
-            clause_id = c.get("clause_id", "")
+    for idx, c in enumerate(sorted_clauses, 1):
+        citation = c.get("citation", f"Clause {idx}")
+        link = c.get("link", "")
+        summary = c.get("plain_summary", "No summary provided.")
+        source = c.get("match_source", "Unknown")
+        clause_id = c.get("clause_id", "")
 
-            if citation and link:
-                link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
-            else:
-                link_html = citation
+        if citation and link:
+            link_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{citation}</a>'
+        else:
+            link_html = citation
 
-            entry = (
-                f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
-                f"<strong>Match Source</strong>: {source} • "
-                f"<code>{doc}</code> • "
-                f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
-            )
-            formatted.append(entry)
-            idx += 1
+        entry = (
+            f"<b>{idx}. <strong>Summary of Clause</strong>: According to {link_html}, {summary}.</b><br>"
+            f"<strong>Match Source</strong>: {source} • "
+            f"<code>{c.get('document', 'Unknown')}</code> • "
+            f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
+        )
+        formatted.append(entry)
 
     return "<br><br>".join(formatted)
 
@@ -100,7 +98,7 @@ Below are relevant Clause matches:
 Write your response in this format:
 1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
-3. If unclear, suggest checking with the ARC or Board of Directors
+3. If unclear, suggest checking with the ARC
 4. Always close with: “If you have any other questions, feel free to ask!”
 
 Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
@@ -181,7 +179,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     clause_text = format_clauses_for_prompt(clauses)
     prompt = build_gpt_prompt(question, clause_text, no_matches)
 
-    # Append gentle whimsical hint if it detects silly words too
+    # Append gentle whimsical hint if silly words appear
     whimsy_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "moat", "magic"]
     if any(word in question.lower() for word in whimsy_keywords):
         prompt += (
