@@ -100,7 +100,7 @@ Below are relevant Clause matches:
 Write your response in this format:
 1. Brief summary of each Clause that might apply
 2. State whether the rules clearly answer the question
-3. If unclear, suggest checking with the ARC
+3. If unclear, suggest checking with the ARC or Board of Directors
 4. Always close with: “If you have any other questions, feel free to ask!”
 
 Use HTML for citations like this: <a href=\"link\" target=\"_blank\">Art. VI</a>
