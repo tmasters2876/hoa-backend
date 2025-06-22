@@ -52,12 +52,10 @@ def check_instant_whimsy(question_lower):
 
 # === Clause helpers ===
 def format_clauses_for_prompt(clauses):
-    # Globally sort all matches by precedence_level ASCENDING
     sorted_clauses = sorted(
         clauses,
         key=lambda c: int(c.get("precedence_level", 99))
     )
-
     formatted = []
     for idx, c in enumerate(sorted_clauses, 1):
         citation = c.get("citation", f"Clause {idx}")
@@ -117,7 +115,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
-        "match_threshold": 0.6,   # ✅ Loosened threshold
+        "match_threshold": 0.6,
         "match_count": 5
     }).execute()
 
@@ -140,20 +138,9 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             clause["clause_id"] = clause.get("clause_id") or clause.get("id")
         vector_matches += fallback_matches.data or []
 
-    return vector_matches
-
-def fetch_soft_fallback_clauses():
-    general_tags = ["shed", "structure", "placement", "approval"]
-    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
-    result = query.execute()
-    fallback_data = result.data or []
-
-    for clause in fallback_data:
-        clause["match_source"] = "General Soft Fallback"
-        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
-
-    if not fallback_data:
-        fallback_data = [{
+    # ✅ Safety: inject fallback shed if no clause even hints at shed-like tag
+    if not any("shed" in (c.get("tags") or []) or "structure" in (c.get("tags") or []) for c in vector_matches):
+        vector_matches.append({
             "precedence_level": "9",
             "plain_summary": "Standard best practice: sheds should generally be located behind the fence line, out of public view, and comply with local setback requirements. Always check with the ARC.",
             "citation": "General Shed Guideline",
@@ -161,9 +148,9 @@ def fetch_soft_fallback_clauses():
             "document": "Default Fallback",
             "match_source": "Injected Fallback",
             "clause_id": "FALLBACK_SHED"
-        }]
+        })
 
-    return fallback_data
+    return vector_matches
 
 # === MAIN ===
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
@@ -178,20 +165,8 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         concern_level=concern_level
     )
 
-    unique_clauses = {}
-    for clause in raw_clauses:
-        cid = clause.get("clause_id")
-        if cid not in unique_clauses and clause.get("match_source") == "Vector Match":
-            unique_clauses[cid] = clause
-    clauses = list(unique_clauses.values())
-
-    no_matches = False
-    if not clauses:
-        clauses = fetch_soft_fallback_clauses()
-        no_matches = True
-
-    clause_text = format_clauses_for_prompt(clauses)
-    prompt = build_gpt_prompt(question, clause_text, no_matches)
+    clause_text = format_clauses_for_prompt(raw_clauses)
+    prompt = build_gpt_prompt(question, clause_text)
 
     whimsy_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "moat", "magic"]
     if any(word in question.lower() for word in whimsy_keywords):
@@ -215,7 +190,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         return {
             "question": question,
             "answer": final_answer,
-            "clauses": clauses,
+            "clauses": raw_clauses,
             "mode": mode,
             "format": "json"
         }
