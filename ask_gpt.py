@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 from openai import OpenAI
 
-# === Load env ===
+# === Load environment ===
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -27,35 +27,32 @@ def check_instant_whimsy(question_lower):
             "My creator was a combination of code, governing documents, and the hard work of your Board members working for you.",
             "I was created by your fellow community members to provide you with an easy-to-use tool to search your governing documents."
         ])
-
     elif any(k in question_lower for k in feedback_keywords):
         return random.choice([
             "Currently there is not a feedback form in place. Please check back for future enhancements.",
             "Your feedback is important to us. Currently there is not a feedback form in place. Please check back for future enhancements."
         ])
-
     elif any(k in question_lower for k in age_keywords):
         return random.choice([
             "I’m exactly 4 years old in human years — but ageless in code. Cookies help me stay young!",
             "Only 4 years old and already HOA’s best helper. Please send virtual cupcakes.",
             "Just 4 years wise! Pretty good for a digital toddler, huh?"
         ])
-
     elif any(k in question_lower for k in dragon_keywords):
         return random.choice([
             "Dragons? I guard HOA secrets like a scaly beast, but I can’t help with fire-breathing dragons. Try fences instead!",
             "Ah, dragons and castles! Sadly I handle covenants, not quests. Ask me about sheds!",
             "If you see a wizard in your yard, call the ARC — or maybe just me. 🧙‍♂️"
         ])
-
     return None
 
-# === Clause helpers ===
+# === Format Clauses ===
 def format_clauses_for_prompt(clauses):
     sorted_clauses = sorted(
         clauses,
         key=lambda c: int(c.get("precedence_level", 99))
     )
+
     formatted = []
     for idx, c in enumerate(sorted_clauses, 1):
         citation = c.get("citation", f"Clause {idx}")
@@ -79,6 +76,7 @@ def format_clauses_for_prompt(clauses):
 
     return "<br><br>".join(formatted)
 
+# === GPT Prompt ===
 def build_gpt_prompt(question, clause_text, no_matches=False):
     fallback_msg = (
         "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
@@ -106,6 +104,7 @@ Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
 Final Answer:
 """
 
+# === Vector + Fallback Matching ===
 def fetch_matching_clauses(question, tags=None, structure_type=None, concern_level=None):
     embedding_response = client.embeddings.create(
         model="text-embedding-ada-002",
@@ -138,9 +137,21 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             clause["clause_id"] = clause.get("clause_id") or clause.get("id")
         vector_matches += fallback_matches.data or []
 
-    # ✅ Safety: inject fallback shed if no clause even hints at shed-like tag
-    if not any("shed" in (c.get("tags") or []) or "structure" in (c.get("tags") or []) for c in vector_matches):
-        vector_matches.append({
+    return vector_matches
+
+# === Soft fallback ===
+def fetch_soft_fallback_clauses():
+    general_tags = ["shed", "structure", "placement", "approval"]
+    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
+    result = query.execute()
+    fallback_data = result.data or []
+
+    for clause in fallback_data:
+        clause["match_source"] = "General Soft Fallback"
+        clause["clause_id"] = clause.get("clause_id") or clause.get("id")
+
+    if not fallback_data:
+        fallback_data = [{
             "precedence_level": "9",
             "plain_summary": "Standard best practice: sheds should generally be located behind the fence line, out of public view, and comply with local setback requirements. Always check with the ARC.",
             "citation": "General Shed Guideline",
@@ -148,9 +159,9 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             "document": "Default Fallback",
             "match_source": "Injected Fallback",
             "clause_id": "FALLBACK_SHED"
-        })
+        }]
 
-    return vector_matches
+    return fallback_data
 
 # === MAIN ===
 def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
@@ -165,8 +176,20 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         concern_level=concern_level
     )
 
-    clause_text = format_clauses_for_prompt(raw_clauses)
-    prompt = build_gpt_prompt(question, clause_text)
+    unique_clauses = {}
+    for clause in raw_clauses:
+        cid = clause.get("clause_id")
+        if cid not in unique_clauses and clause.get("match_source") == "Vector Match":
+            unique_clauses[cid] = clause
+    clauses = list(unique_clauses.values())
+
+    no_matches = False
+    if not clauses:
+        clauses = fetch_soft_fallback_clauses()
+        no_matches = True
+
+    clause_text = format_clauses_for_prompt(clauses)
+    prompt = build_gpt_prompt(question, clause_text, no_matches)
 
     whimsy_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "moat", "magic"]
     if any(word in question.lower() for word in whimsy_keywords):
@@ -190,7 +213,7 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
         return {
             "question": question,
             "answer": final_answer,
-            "clauses": raw_clauses,
+            "clauses": clauses,
             "mode": mode,
             "format": "json"
         }
