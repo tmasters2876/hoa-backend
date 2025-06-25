@@ -24,13 +24,18 @@ def check_instant_whimsy(question_lower):
 
     if any(k in question_lower for k in creator_keywords):
         return random.choice([
-            "My creator was a combination of code, governing documents, and the hard work of your Board members working for you.",
+            "My creator was a combination of code, governing documents, and the hard work of your community members working for you.",
+            "Created by your fellow HOA members to make your life easier.",
+            "Built by your community to help you navigate your governing documents.",
+            "Developed by your HOA members to make your life simpler.",
             "I was created by your fellow community members to provide you with an easy-to-use tool to search your governing documents."
         ])
     elif any(k in question_lower for k in feedback_keywords):
         return random.choice([
-            "Currently there is not a feedback form in place. Please check back for future enhancements.",
-            "Your feedback is important to us. Currently there is not a feedback form in place. Please check back for future enhancements."
+            "Currently there is not a feedback form in place. Please check back for future enhancements. For now, please reach out to the board or arc to provide feedback.",
+            "We appreciate your feedback! Currently there is not a feedback form in place. Please reach out to the board or arc to provide feedback.",
+            "Your input is valuable to us. Currently there is not a feedback form in place. Please reach out to the board or arc to provide feedback.",
+            "Your feedback is important to us. Currently there is not a feedback form in place. Please reach out to the board or arc to provide feedback."
         ])
     elif any(k in question_lower for k in age_keywords):
         return random.choice([
