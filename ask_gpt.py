@@ -17,7 +17,7 @@ supabase = create_client(
 
 # === Instant whimsy ===
 def check_instant_whimsy(question_lower):
-    creator_keywords = ["creator", "developer", "who made you", "who built you"]
+    creator_keywords = ["creator", "developer", "who made you", "who built you","how were you made", "who created you", "who designed you","who programmed you"]
     feedback_keywords = ["feedback", "suggestion", "complaint"]
     age_keywords = ["how old", "your age", "age", "years old"]
     dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "elf", "moat", "magic"]
