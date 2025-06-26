@@ -158,7 +158,7 @@ def fetch_soft_fallback_clauses():
     if not fallback_data:
         fallback_data = [{
             "precedence_level": "9",
-            "plain_summary": "Standard best practice: Your question is very specific; please check your governing documents or with the ARC for precise guidance.",
+            "plain_summary": "Standard best practice: Your question is very specific; please check your governing documents or with the ARC or Board for precise guidance.",
             "citation": "General Guideline",
             "link": "",
             "document": "Default Fallback",
