@@ -146,7 +146,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
 # === Soft fallback ===
 def fetch_soft_fallback_clauses():
-    general_tags = ["shed", "structure", "placement", "approval"]
+    general_tags = ["shed", "structure", "placement", "garage", "approval"]
     query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
     result = query.execute()
     fallback_data = result.data or []
