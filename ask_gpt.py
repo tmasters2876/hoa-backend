@@ -19,7 +19,7 @@ supabase = create_client(
 def check_instant_whimsy(question_lower):
     creator_keywords = ["creator", "developer", "who made you", "who built you","how were you made", "who created you", "who designed you","who programmed you"]
     feedback_keywords = ["feedback", "suggestion", "complaint"]
-    age_keywords = ["how old", "your age", "age", "years old"]
+    #age_keywords = ["how old", "your age", "age", "years old"]
     dragon_keywords = ["dragon", "castle", "wizard", "unicorn", "fairy", "goblin", "elf", "moat", "magic"]
 
     if any(k in question_lower for k in creator_keywords):
@@ -37,12 +37,10 @@ def check_instant_whimsy(question_lower):
             "Your input is valuable to us. Currently there is not a feedback form in place. Please reach out to the board or arc to provide feedback.",
             "Your feedback is important to us. Currently there is not a feedback form in place. Please reach out to the board or arc to provide feedback."
         ])
-    elif any(k in question_lower for k in age_keywords):
-        return random.choice([
-            "I’m exactly 4 years old in human years — but ageless in code. Cookies help me stay young!",
-            "Only 4 years old and already HOA’s best helper. Please send virtual cupcakes.",
-            "Just 4 years wise! Pretty good for a digital toddler, huh?"
-        ])
+    #elif any(k in question_lower for k in age_keywords):
+        #return random.choice([
+          #  "I’m exactly 4 years old in human years — but ageless in # code. Cookies help me stay young!",
+    #    ])
     elif any(k in question_lower for k in dragon_keywords):
         return random.choice([
             "Dragons? I guard HOA secrets like a scaly beast, but I can’t help with fire-breathing dragons. Try fences instead!",
@@ -146,7 +144,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 
 # === Soft fallback ===
 def fetch_soft_fallback_clauses():
-    general_tags = ["shed", "structure", "placement", "garage", "approval"]
+    general_tags = ["shed", "structure", "placement", "approval"]
     query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
     result = query.execute()
     fallback_data = result.data or []
