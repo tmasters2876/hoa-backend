@@ -1,0 +1,399 @@
+{% extends "admin_base.html" %}
+
+{% block content %}
+
+{# ── Help Panel ── #}
+<details class="panel help-panel">
+  <summary>Help &amp; Reference</summary>
+  <div class="help-content">
+    <div class="help-section">
+      <h3>Browse &amp; Filters</h3>
+      <p>Filter clauses by keyword (searches clause_id, citation, document, summary, and full text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
+    </div>
+    <div class="help-section">
+      <h3>Add Clause</h3>
+      <p>Manually insert a single new clause. At least one of <code>clause_text</code> or <code>plain_summary</code> is required. The embedding is <em>not</em> generated automatically — use <strong>Regenerate Embedding</strong> on the saved clause afterward.</p>
+    </div>
+    <div class="help-section">
+      <h3>Import CSV — Add</h3>
+      <p>Bulk-inserts clauses from a .csv file. Column rules:</p>
+      <ul>
+        <li>At least one of <code>clause_text</code> or <code>plain_summary</code> must be non-empty per row</li>
+        <li><code>page</code> and <code>precedence_level</code> must be whole numbers if provided</li>
+        <li><code>tags</code> — comma-separated, e.g. <code>fence, arc</code></li>
+        <li><code>match_source</code> defaults to <code>CSV Import</code> if omitted</li>
+        <li>Columns not in the template are rejected; valid rows are inserted even if others fail</li>
+      </ul>
+      <p>All imported clauses start with <strong>stale embeddings</strong> and won't appear in semantic search until regenerated.</p>
+    </div>
+    <div class="help-section">
+      <h3>Import CSV — Delete</h3>
+      <p>Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the file. <strong>There is no undo.</strong> The CSV must contain a <code>clause_id</code> column; all other columns are ignored. Rows with an empty <code>clause_id</code> are skipped.</p>
+    </div>
+    <div class="help-section">
+      <h3>Embeddings</h3>
+      <p>Each clause has an embedding — a numeric vector used for semantic search by the HOA chatbot.</p>
+      <ul>
+        <li>Editing <code>clause_text</code> or <code>plain_summary</code> nulls the embedding (marks it stale), because the old vector no longer reflects the new text.</li>
+        <li>Stale clauses are excluded from vector search results until regenerated.</li>
+        <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it.</li>
+        <li>Model in use: <code>{{ embedding_model }}</code></li>
+      </ul>
+    </div>
+    <div class="help-section">
+      <h3>Search Test</h3>
+      <p>Runs a live query using the same embedding model and Supabase <code>match_clauses</code> RPC as the production chatbot. Use this to verify that a question surfaces the expected clauses before testing in the frontend.</p>
+    </div>
+  </div>
+</details>
+
+{# ── Main Grid ── #}
+<section class="grid">
+
+  {# ── Sidebar ── #}
+  <aside class="stack">
+
+    {# Browse #}
+    <div class="panel">
+      <h2>Browse</h2>
+      <form method="get" action="{{ url_for('admin_home') }}" class="stack">
+        <div>
+          <label for="q">Keyword</label>
+          <input id="q" name="q" value="{{ filters.q }}" placeholder="fence, shed, Art. VI">
+        </div>
+        <div>
+          <label for="document">Document</label>
+          <select id="document" name="document">
+            <option value="">All documents</option>
+            {% for doc in documents %}
+              <option value="{{ doc }}" {% if filters.document == doc %}selected{% endif %}>{{ doc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="tag">Tag</label>
+          <select id="tag" name="tag">
+            <option value="">All tags</option>
+            {% for tag in tags %}
+              <option value="{{ tag }}" {% if filters.tag == tag %}selected{% endif %}>{{ tag }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">Apply Filters</button>
+      </form>
+    </div>
+
+    {# Add Clause — collapsed by default #}
+    <details class="panel collapsible-panel">
+      <summary>Add Clause</summary>
+      <form method="post" action="{{ url_for('create_clause') }}" class="stack" style="margin-top:14px;">
+        <div>
+          <label for="new_clause_id">Clause ID</label>
+          <input id="new_clause_id" name="clause_id" placeholder="ART6-12">
+        </div>
+        <div>
+          <label for="new_document">Document</label>
+          <input id="new_document" name="document" placeholder="Declaration">
+        </div>
+        <div>
+          <label for="new_page">Page</label>
+          <input id="new_page" name="page" type="number" min="1">
+        </div>
+        <div>
+          <label for="new_citation">Citation</label>
+          <input id="new_citation" name="citation" placeholder="Art. VI, Sec. 3">
+        </div>
+        <div>
+          <label for="new_tags">Tags</label>
+          <input id="new_tags" name="tags" placeholder="fence, arc, structure">
+        </div>
+        <div>
+          <label for="new_precedence">Precedence Level</label>
+          <input id="new_precedence" name="precedence_level" type="number" min="0">
+        </div>
+        <div>
+          <label for="new_link">Link</label>
+          <input id="new_link" name="link" placeholder="https://...">
+        </div>
+        <div>
+          <label for="new_summary">Plain Summary</label>
+          <textarea id="new_summary" name="plain_summary"></textarea>
+        </div>
+        <div>
+          <label for="new_text">Clause Text</label>
+          <textarea id="new_text" name="clause_text"></textarea>
+        </div>
+        <button type="submit">Add Clause</button>
+      </form>
+    </details>
+
+    {# Import CSV — Add #}
+    <div class="panel">
+      <div class="panel-title-row">
+        <h2>Import CSV</h2>
+        <span class="badge add">Add</span>
+      </div>
+      <p class="muted">Upload a .csv to bulk-add clauses. All imported rows start with stale embeddings — regenerate after import.</p>
+      <p class="muted"><a href="{{ url_for('import_template') }}">Download blank template (.csv)</a></p>
+      <form method="post" action="{{ url_for('import_clauses') }}" enctype="multipart/form-data" class="stack"
+            onsubmit="return confirm('Add all clauses from this file to Supabase?\n\nThey will be inserted with stale embeddings — regenerate afterward.');">
+        <div>
+          <label for="csv_file">CSV File</label>
+          <input id="csv_file" name="csv_file" type="file" accept=".csv" required>
+        </div>
+        <button type="submit">Import and Add</button>
+      </form>
+    </div>
+
+    {# Import CSV — Delete #}
+    <div class="panel danger-zone">
+      <div class="panel-title-row">
+        <h2>Import CSV</h2>
+        <span class="badge delete">Delete</span>
+      </div>
+      <div class="destructive-warning">
+        ⚠ Permanently deletes every Supabase row matching the <code>clause_id</code> values in your file. This cannot be undone.
+      </div>
+      <p class="muted"><a href="{{ url_for('bulk_delete_template') }}">Download blank template (.csv)</a></p>
+      <form method="post" action="{{ url_for('bulk_delete_clauses') }}" enctype="multipart/form-data" class="stack"
+            onsubmit="return confirm('PERMANENTLY delete all clauses matching the clause_ids in your file?\n\nThis cannot be undone.');">
+        <div>
+          <label for="delete_csv_file">CSV File</label>
+          <input id="delete_csv_file" name="delete_csv_file" type="file" accept=".csv" required>
+        </div>
+        <button class="danger" type="submit">Delete from CSV</button>
+      </form>
+    </div>
+
+    {# Search Test #}
+    <div class="panel">
+      <h2>Search Test</h2>
+      <p class="muted">Live semantic + keyword search using <code>{{ embedding_model }}</code>.</p>
+      <form method="get" action="{{ url_for('admin_home') }}" class="stack">
+        <div>
+          <label for="test_query">Question</label>
+          <textarea id="test_query" name="test_query" placeholder="Can I build a shed in my backyard?">{{ filters.test_query }}</textarea>
+        </div>
+        <input type="hidden" name="q" value="{{ filters.q }}">
+        <input type="hidden" name="tag" value="{{ filters.tag }}">
+        <input type="hidden" name="document" value="{{ filters.document }}">
+        <button class="secondary" type="submit">Run Search Test</button>
+      </form>
+    </div>
+
+  </aside>
+
+  {# ── Main Content ── #}
+  <section class="stack">
+
+    {# Clauses list #}
+    <div class="panel">
+      <div class="summary-bar">
+        <div>
+          <h2>Clauses</h2>
+          <div class="muted">{{ total_count }} result{% if total_count != 1 %}s{% endif %} &bull; page {{ filters.page }} of {{ total_pages }}</div>
+        </div>
+        <div class="button-row">
+          {% if prev_url %}<a href="{{ prev_url }}"><button type="button" class="secondary">Previous</button></a>{% endif %}
+          {% if next_url %}<a href="{{ next_url }}"><button type="button" class="secondary">Next</button></a>{% endif %}
+        </div>
+      </div>
+
+      <div class="clause-list">
+        {% for clause in clauses %}
+          <article class="clause-card{% if clause.embedding_stale %} stale-embedding{% endif %}">
+
+            {# Always-visible header #}
+            <div class="clause-head">
+              <div>
+                <strong>{{ clause.citation or clause.clause_id or clause.id }}</strong>
+                <div class="clause-meta">
+                  {{ clause.document or "No document" }}
+                  {% if clause.page %}&bull; p.{{ clause.page }}{% endif %}
+                  {% if clause.created_at %}&bull; {{ clause.created_at[:10] }}{% endif %}
+                </div>
+                <div class="pill-row">
+                  <span class="pill">{{ clause.clause_id or "no id" }}</span>
+                  <span class="pill">prec.&nbsp;{{ clause.precedence_level if clause.precedence_level is not none else "—" }}</span>
+                  {% if clause.embedding_stale %}
+                    <span class="pill stale embedding-status-pill">embedding stale</span>
+                  {% else %}
+                    <span class="pill ok embedding-status-pill">embedding ok</span>
+                  {% endif %}
+                  {% for tag in (clause.tags or []) %}
+                    <span class="pill">{{ tag }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="clause-meta" style="white-space:nowrap; font-size:0.78rem; opacity:0.6;">{{ clause.id[:8] }}…</div>
+            </div>
+
+            {# Expandable edit area #}
+            <details class="clause-details">
+              <summary></summary>
+              <div class="clause-body">
+                <form method="post"
+                      action="{{ url_for('update_clause_json', clause_id=clause.id) }}"
+                      data-inline-save
+                      class="stack">
+                  <div class="button-row">
+                    <div>
+                      <label>Clause ID</label>
+                      <input name="clause_id" value="{{ clause.clause_id or '' }}">
+                    </div>
+                    <div>
+                      <label>Document</label>
+                      <input name="document" value="{{ clause.document or '' }}">
+                    </div>
+                    <div>
+                      <label>Page</label>
+                      <input name="page" type="number" min="1" value="{{ clause.page or '' }}">
+                    </div>
+                    <div>
+                      <label>Precedence</label>
+                      <input name="precedence_level" type="number" min="0" value="{{ clause.precedence_level or '' }}">
+                    </div>
+                  </div>
+                  <div>
+                    <label>Citation</label>
+                    <input name="citation" value="{{ clause.citation or '' }}">
+                  </div>
+                  <div>
+                    <label>Link</label>
+                    <input name="link" value="{{ clause.link or '' }}">
+                  </div>
+                  <div>
+                    <label>Tags</label>
+                    <input name="tags" value="{{ clause.tags_csv }}">
+                  </div>
+                  <div>
+                    <label>Plain Summary</label>
+                    <textarea name="plain_summary">{{ clause.plain_summary or '' }}</textarea>
+                  </div>
+                  <div>
+                    <label>Clause Text</label>
+                    <textarea name="clause_text">{{ clause.clause_text or '' }}</textarea>
+                  </div>
+                  <div class="button-row" style="align-items:center;">
+                    <button type="submit" style="flex:0 0 auto;">Save Clause</button>
+                    <div class="inline-feedback"></div>
+                  </div>
+                </form>
+
+                <div class="button-row" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--line);">
+                  <form method="post" action="{{ url_for('regenerate_clause_embedding', clause_id=clause.id) }}">
+                    <button class="warn" type="submit">Regenerate Embedding</button>
+                  </form>
+                  <form method="post" action="{{ url_for('delete_clause', clause_id=clause.id) }}"
+                        onsubmit="return confirm('Permanently delete this clause?\n\nThis cannot be undone.');">
+                    <button class="danger" type="submit">Delete Clause</button>
+                  </form>
+                </div>
+              </div>
+            </details>
+
+          </article>
+        {% else %}
+          <p class="muted">No clauses matched the current filters.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Search test results #}
+    {% if search_test %}
+      <div class="panel">
+        <h2>Search Test Results</h2>
+        <p class="muted">Question: {{ search_test.question }}</p>
+        <div class="test-grid">
+          <div>
+            <h3>Vector Matches</h3>
+            <table class="result-table">
+              <thead>
+                <tr><th>Citation</th><th>Document</th><th>Summary</th></tr>
+              </thead>
+              <tbody>
+                {% for row in search_test.vector %}
+                  <tr>
+                    <td>{{ row.citation or row.clause_id or row.id }}</td>
+                    <td>{{ row.document or '' }}</td>
+                    <td>{{ row.plain_summary or row.clause_text or '' }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="3" class="muted">No vector matches returned.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3>Keyword Matches</h3>
+            <table class="result-table">
+              <thead>
+                <tr><th>Citation</th><th>Document</th><th>Summary</th></tr>
+              </thead>
+              <tbody>
+                {% for row in search_test.keyword %}
+                  <tr>
+                    <td>{{ row.citation or row.clause_id or row.id }}</td>
+                    <td>{{ row.document or '' }}</td>
+                    <td>{{ row.plain_summary or row.clause_text or '' }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="3" class="muted">No keyword matches returned.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+  </section>
+</section>
+
+<script>
+(function () {
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form.hasAttribute('data-inline-save')) return;
+    e.preventDefault();
+
+    var card = form.closest('.clause-card');
+    var feedback = card.querySelector('.inline-feedback');
+    var btn = form.querySelector('button[type="submit"]');
+    var orig = btn.textContent;
+
+    btn.disabled = true;
+    btn.textContent = 'Saving\u2026';
+    if (feedback) { feedback.textContent = ''; feedback.className = 'inline-feedback'; }
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (feedback) {
+          feedback.textContent = data.message;
+          feedback.className = 'inline-feedback ' + (data.ok ? 'ok' : 'err');
+        }
+        if (data.ok && data.embedding_stale) {
+          card.classList.add('stale-embedding');
+          var pill = card.querySelector('.embedding-status-pill');
+          if (pill) {
+            pill.textContent = 'embedding stale';
+            pill.className = 'pill stale embedding-status-pill';
+          }
+        }
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (feedback) {
+          feedback.textContent = 'Save failed \u2014 reload and try again.';
+          feedback.className = 'inline-feedback err';
+        }
+      });
+  });
+})();
+</script>
+
+{% endblock %}

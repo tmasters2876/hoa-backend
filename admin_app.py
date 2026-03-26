@@ -1,0 +1,591 @@
+import csv
+import io
+import math
+from urllib.parse import urlencode
+
+from flask import Flask, Response, flash, jsonify, redirect, render_template, request, url_for
+
+from services import (
+    OPENAI_EMBEDDING_MODEL,
+    build_clause_embedding_input,
+    generate_embedding,
+    get_supabase_client,
+)
+
+app = Flask(__name__)
+app.secret_key = "hoa-admin-local"
+
+TEMPLATE_HEADERS = [
+    "clause_id", "document", "page", "citation",
+    "clause_text", "plain_summary", "link", "tags",
+    "precedence_level", "match_source",
+]
+IMPORTABLE_COLUMNS = set(TEMPLATE_HEADERS)
+
+CLAUSE_COLUMNS = (
+    "id,clause_id,document,page,citation,clause_text,plain_summary,link,"
+    "embedding,match_source,tags,created_at,precedence_level"
+)
+PAGE_SIZE = 25
+
+
+def supabase():
+    return get_supabase_client()
+
+
+def parse_tags(raw: str) -> list[str]:
+    return [item.strip() for item in (raw or "").split(",") if item.strip()]
+
+
+def serialize_tags(tags) -> str:
+    if isinstance(tags, list):
+        return ", ".join(str(tag) for tag in tags if str(tag).strip())
+    return ""
+
+
+def clause_has_stale_embedding(clause: dict) -> bool:
+    return not clause.get("embedding")
+
+
+def to_int_or_none(value):
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_filter_options() -> tuple[list[str], list[str]]:
+    result = (
+        supabase()
+        .from_("clauses")
+        .select("document,tags")
+        .limit(1000)
+        .execute()
+    )
+    documents = sorted(
+        {
+            row.get("document", "").strip()
+            for row in (result.data or [])
+            if isinstance(row.get("document"), str) and row.get("document").strip()
+        }
+    )
+    tags = sorted(
+        {
+            str(tag).strip()
+            for row in (result.data or [])
+            for tag in (row.get("tags") or [])
+            if str(tag).strip()
+        }
+    )
+    return documents, tags
+
+
+def build_keyword_filter(keyword: str) -> str:
+    pattern = f"%{keyword.strip()}%"
+    return (
+        f"clause_id.ilike.{pattern},"
+        f"citation.ilike.{pattern},"
+        f"document.ilike.{pattern},"
+        f"plain_summary.ilike.{pattern},"
+        f"clause_text.ilike.{pattern}"
+    )
+
+
+def fetch_clause(clause_id: str) -> dict | None:
+    result = (
+        supabase()
+        .from_("clauses")
+        .select(CLAUSE_COLUMNS)
+        .eq("id", clause_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
+def browse_clauses(keyword: str, tag: str, document: str, page: int) -> tuple[list[dict], int]:
+    query = supabase().from_("clauses").select(CLAUSE_COLUMNS, count="exact")
+    if keyword:
+        query = query.or_(build_keyword_filter(keyword))
+    if tag:
+        query = query.contains("tags", [tag])
+    if document:
+        query = query.eq("document", document)
+
+    start = (page - 1) * PAGE_SIZE
+    end = start + PAGE_SIZE - 1
+    result = query.order("created_at", desc=True).range(start, end).execute()
+    return result.data or [], result.count or 0
+
+
+def run_search_test(question: str, limit: int = 8) -> dict:
+    results = {
+        "question": question,
+        "vector": [],
+        "keyword": [],
+    }
+    if not question.strip():
+        return results
+
+    query_embedding = generate_embedding(question)
+    vector_result = supabase().rpc(
+        "match_clauses",
+        {
+            "query_embedding": query_embedding,
+            "match_threshold": 0.6,
+            "match_count": limit,
+        },
+    ).execute()
+    keyword_result = (
+        supabase()
+        .from_("clauses")
+        .select(CLAUSE_COLUMNS)
+        .or_(build_keyword_filter(question))
+        .limit(limit)
+        .execute()
+    )
+
+    results["vector"] = vector_result.data or []
+    results["keyword"] = keyword_result.data or []
+    return results
+
+
+def current_filters() -> dict:
+    return {
+        "q": request.args.get("q", "").strip(),
+        "tag": request.args.get("tag", "").strip(),
+        "document": request.args.get("document", "").strip(),
+        "page": max(1, to_int_or_none(request.args.get("page")) or 1),
+        "test_query": request.args.get("test_query", "").strip(),
+    }
+
+
+def index_redirect():
+    return redirect(url_for("admin_home"))
+
+
+@app.get("/")
+def root():
+    return index_redirect()
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.get("/admin")
+def admin_home():
+    filters = current_filters()
+    clauses, total_count = browse_clauses(
+        keyword=filters["q"],
+        tag=filters["tag"],
+        document=filters["document"],
+        page=filters["page"],
+    )
+    documents, tags = get_filter_options()
+    search_test = run_search_test(filters["test_query"]) if filters["test_query"] else None
+
+    total_pages = max(1, math.ceil(total_count / PAGE_SIZE)) if total_count else 1
+    query_args = {k: v for k, v in filters.items() if k != "page" and v}
+    prev_url = None
+    next_url = None
+    if filters["page"] > 1:
+        prev_url = url_for("admin_home") + "?" + urlencode({**query_args, "page": filters["page"] - 1})
+    if filters["page"] < total_pages:
+        next_url = url_for("admin_home") + "?" + urlencode({**query_args, "page": filters["page"] + 1})
+
+    for clause in clauses:
+        clause["tags_csv"] = serialize_tags(clause.get("tags"))
+        clause["embedding_stale"] = clause_has_stale_embedding(clause)
+
+    if search_test:
+        for row in search_test["vector"]:
+            row["tags_csv"] = serialize_tags(row.get("tags"))
+        for row in search_test["keyword"]:
+            row["tags_csv"] = serialize_tags(row.get("tags"))
+
+    return render_template(
+        "admin_index.html",
+        clauses=clauses,
+        documents=documents,
+        tags=tags,
+        filters=filters,
+        total_count=total_count,
+        total_pages=total_pages,
+        prev_url=prev_url,
+        next_url=next_url,
+        search_test=search_test,
+        embedding_model=OPENAI_EMBEDDING_MODEL,
+    )
+
+
+@app.post("/admin/clauses")
+def create_clause():
+    payload = {
+        "clause_id": request.form.get("clause_id", "").strip() or None,
+        "document": request.form.get("document", "").strip() or None,
+        "page": to_int_or_none(request.form.get("page")),
+        "citation": request.form.get("citation", "").strip() or None,
+        "clause_text": request.form.get("clause_text", "").strip() or None,
+        "plain_summary": request.form.get("plain_summary", "").strip() or None,
+        "link": request.form.get("link", "").strip() or None,
+        "tags": parse_tags(request.form.get("tags", "")),
+        "precedence_level": to_int_or_none(request.form.get("precedence_level")),
+        "match_source": "Admin Added",
+        "embedding": None,
+    }
+    supabase().from_("clauses").insert(payload).execute()
+    flash("Clause added. Embedding is marked stale until you regenerate it.", "success")
+    return redirect(url_for("admin_home"))
+
+
+@app.post("/admin/clauses/<clause_id>/update")
+def update_clause(clause_id: str):
+    existing = fetch_clause(clause_id)
+    if not existing:
+        flash(f"Clause {clause_id} was not found.", "error")
+        return redirect(url_for("admin_home"))
+
+    new_clause_text = request.form.get("clause_text", "").strip()
+    new_plain_summary = request.form.get("plain_summary", "").strip()
+    text_changed = (
+        (existing.get("clause_text") or "").strip() != new_clause_text
+        or (existing.get("plain_summary") or "").strip() != new_plain_summary
+    )
+
+    payload = {
+        "clause_id": request.form.get("clause_id", "").strip() or None,
+        "document": request.form.get("document", "").strip() or None,
+        "page": to_int_or_none(request.form.get("page")),
+        "citation": request.form.get("citation", "").strip() or None,
+        "clause_text": new_clause_text or None,
+        "plain_summary": new_plain_summary or None,
+        "link": request.form.get("link", "").strip() or None,
+        "tags": parse_tags(request.form.get("tags", "")),
+        "precedence_level": to_int_or_none(request.form.get("precedence_level")),
+    }
+
+    if text_changed:
+        payload["embedding"] = None
+        payload["match_source"] = "Admin Edited (Embedding Stale)"
+
+    supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+
+    if text_changed:
+        flash("Clause updated. Text changed, so the embedding was marked stale.", "success")
+    else:
+        flash("Clause metadata updated.", "success")
+    return redirect(url_for("admin_home"))
+
+
+@app.post("/admin/clauses/<clause_id>/update-json")
+def update_clause_json(clause_id: str):
+    existing = fetch_clause(clause_id)
+    if not existing:
+        return jsonify({"ok": False, "message": f"Clause {clause_id} not found."}), 404
+
+    new_clause_text = request.form.get("clause_text", "").strip()
+    new_plain_summary = request.form.get("plain_summary", "").strip()
+    text_changed = (
+        (existing.get("clause_text") or "").strip() != new_clause_text
+        or (existing.get("plain_summary") or "").strip() != new_plain_summary
+    )
+
+    payload = {
+        "clause_id": request.form.get("clause_id", "").strip() or None,
+        "document": request.form.get("document", "").strip() or None,
+        "page": to_int_or_none(request.form.get("page")),
+        "citation": request.form.get("citation", "").strip() or None,
+        "clause_text": new_clause_text or None,
+        "plain_summary": new_plain_summary or None,
+        "link": request.form.get("link", "").strip() or None,
+        "tags": parse_tags(request.form.get("tags", "")),
+        "precedence_level": to_int_or_none(request.form.get("precedence_level")),
+    }
+
+    if text_changed:
+        payload["embedding"] = None
+        payload["match_source"] = "Admin Edited (Embedding Stale)"
+
+    supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+
+    embedding_stale = text_changed or not existing.get("embedding")
+    if text_changed:
+        message = "Saved. Text changed — embedding is now stale."
+    else:
+        message = "Metadata saved."
+
+    return jsonify({"ok": True, "message": message, "embedding_stale": embedding_stale})
+
+
+@app.post("/admin/clauses/<clause_id>/delete")
+def delete_clause(clause_id: str):
+    supabase().from_("clauses").delete().eq("id", clause_id).execute()
+    flash(f"Deleted clause {clause_id}.", "success")
+    return redirect(url_for("admin_home"))
+
+
+@app.post("/admin/clauses/<clause_id>/regenerate-embedding")
+def regenerate_clause_embedding(clause_id: str):
+    clause = fetch_clause(clause_id)
+    if not clause:
+        flash(f"Clause {clause_id} was not found.", "error")
+        return redirect(url_for("admin_home"))
+
+    embedding_input = build_clause_embedding_input(clause)
+    if not embedding_input.strip():
+        flash("Cannot generate an embedding for an empty clause.", "error")
+        return redirect(url_for("admin_home"))
+
+    embedding = generate_embedding(embedding_input)
+    supabase().from_("clauses").update(
+        {
+            "embedding": embedding,
+            "match_source": "Admin Refreshed Embedding",
+        }
+    ).eq("id", clause_id).execute()
+    flash(f"Regenerated embedding for clause {clause_id}.", "success")
+    return redirect(url_for("admin_home"))
+
+
+@app.get("/admin/import/template")
+def import_template():
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=TEMPLATE_HEADERS)
+    writer.writeheader()
+    writer.writerow({
+        "clause_id": "ART6-12",
+        "document": "Declaration",
+        "page": "14",
+        "citation": "Art. VI, Sec. 3",
+        "clause_text": "No structure shall be erected, placed, or altered on any lot until construction plans have been approved by the ARC.",
+        "plain_summary": "Residents may not build or alter any structure without prior ARC approval.",
+        "link": "",
+        "tags": "arc, structure, approval",
+        "precedence_level": "2",
+        "match_source": "CSV Import",
+    })
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clauses_template.csv"},
+    )
+
+
+@app.post("/admin/import")
+def import_clauses():
+    file = request.files.get("csv_file")
+    if not file or not file.filename:
+        flash("No file selected.", "error")
+        return redirect(url_for("admin_home"))
+    if not file.filename.lower().endswith(".csv"):
+        flash("File must be a .csv.", "error")
+        return redirect(url_for("admin_home"))
+
+    try:
+        text = file.stream.read().decode("utf-8-sig")  # strips BOM if present
+    except Exception:
+        flash("Could not read file. Make sure it is UTF-8 encoded.", "error")
+        return redirect(url_for("admin_home"))
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        flash("CSV appears to be empty.", "error")
+        return redirect(url_for("admin_home"))
+
+    headers = {h.strip() for h in reader.fieldnames}
+
+    # --- Header validation ---
+    unknown = headers - IMPORTABLE_COLUMNS
+    if unknown:
+        flash(
+            f"Unknown column(s): {', '.join(sorted(unknown))}. "
+            f"Allowed columns: {', '.join(TEMPLATE_HEADERS)}.",
+            "error",
+        )
+        return redirect(url_for("admin_home"))
+
+    if not headers & {"clause_text", "plain_summary"}:
+        flash("CSV must contain at least a 'clause_text' or 'plain_summary' column.", "error")
+        return redirect(url_for("admin_home"))
+
+    # --- Row validation ---
+    rows_ok = []
+    row_errors = []
+
+    for i, row in enumerate(reader, start=2):  # row 1 is the header
+        errors = []
+
+        page_raw = (row.get("page") or "").strip()
+        page = None
+        if page_raw:
+            try:
+                page = int(page_raw)
+                if page < 1:
+                    errors.append("'page' must be a positive integer")
+            except ValueError:
+                errors.append(f"'page' value '{page_raw}' is not an integer")
+
+        prec_raw = (row.get("precedence_level") or "").strip()
+        precedence_level = None
+        if prec_raw:
+            try:
+                precedence_level = int(prec_raw)
+                if precedence_level < 0:
+                    errors.append("'precedence_level' must be a non-negative integer")
+            except ValueError:
+                errors.append(f"'precedence_level' value '{prec_raw}' is not an integer")
+
+        clause_text = (row.get("clause_text") or "").strip()
+        plain_summary = (row.get("plain_summary") or "").strip()
+        if not clause_text and not plain_summary:
+            errors.append("at least one of 'clause_text' or 'plain_summary' must be non-empty")
+
+        if errors:
+            row_errors.append(f"Row {i}: {'; '.join(errors)}")
+            continue
+
+        rows_ok.append({
+            "clause_id": (row.get("clause_id") or "").strip() or None,
+            "document": (row.get("document") or "").strip() or None,
+            "page": page,
+            "citation": (row.get("citation") or "").strip() or None,
+            "clause_text": clause_text or None,
+            "plain_summary": plain_summary or None,
+            "link": (row.get("link") or "").strip() or None,
+            "tags": parse_tags(row.get("tags") or ""),
+            "precedence_level": precedence_level,
+            "match_source": (row.get("match_source") or "").strip() or "CSV Import",
+            "embedding": None,
+        })
+
+    for err in row_errors:
+        flash(err, "error")
+
+    if rows_ok:
+        supabase().from_("clauses").insert(rows_ok).execute()
+        n = len(rows_ok)
+        flash(
+            f"Imported {n} clause{'s' if n != 1 else ''}. "
+            "Embeddings are stale — regenerate as needed.",
+            "success",
+        )
+    elif not row_errors:
+        flash("CSV had no data rows.", "error")
+
+    return redirect(url_for("admin_home"))
+
+
+@app.get("/admin/bulk-delete/template")
+def bulk_delete_template():
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=TEMPLATE_HEADERS)
+    writer.writeheader()
+    writer.writerow({
+        "clause_id": "ART6-12",
+        "document": "Declaration",
+        "page": "14",
+        "citation": "Art. VI, Sec. 3",
+        "clause_text": "No structure shall be erected, placed, or altered on any lot until construction plans have been approved by the ARC.",
+        "plain_summary": "Residents may not build or alter any structure without prior ARC approval.",
+        "link": "",
+        "tags": "arc, structure, approval",
+        "precedence_level": "2",
+        "match_source": "CSV Import",
+    })
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=bulk_delete_template.csv"},
+    )
+
+
+@app.post("/admin/bulk-delete")
+def bulk_delete_clauses():
+    file = request.files.get("delete_csv_file")
+    if not file or not file.filename:
+        flash("No file selected.", "error")
+        return redirect(url_for("admin_home"))
+    if not file.filename.lower().endswith(".csv"):
+        flash("File must be a .csv.", "error")
+        return redirect(url_for("admin_home"))
+
+    try:
+        text = file.stream.read().decode("utf-8-sig")
+    except Exception:
+        flash("Could not read file. Make sure it is UTF-8 encoded.", "error")
+        return redirect(url_for("admin_home"))
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        flash("CSV appears to be empty.", "error")
+        return redirect(url_for("admin_home"))
+
+    headers = {h.strip() for h in reader.fieldnames}
+
+    # --- Header validation ---
+    unknown = headers - IMPORTABLE_COLUMNS
+    if unknown:
+        flash(
+            f"Unknown column(s): {', '.join(sorted(unknown))}. "
+            f"Allowed columns: {', '.join(TEMPLATE_HEADERS)}.",
+            "error",
+        )
+        return redirect(url_for("admin_home"))
+
+    if "clause_id" not in headers:
+        flash("CSV must contain a 'clause_id' column — this is used to identify rows for deletion.", "error")
+        return redirect(url_for("admin_home"))
+
+    # --- Row validation and collection ---
+    ids_to_delete = []
+    row_errors = []
+
+    for i, row in enumerate(reader, start=2):
+        clause_id = (row.get("clause_id") or "").strip()
+        if not clause_id:
+            row_errors.append(f"Row {i}: 'clause_id' is empty — skipped")
+            continue
+        ids_to_delete.append(clause_id)
+
+    for err in row_errors:
+        flash(err, "error")
+
+    if not ids_to_delete:
+        flash("No valid clause_id values found — nothing deleted.", "error")
+        return redirect(url_for("admin_home"))
+
+    # --- Delete ---
+    deleted_count = 0
+    delete_errors = []
+    for clause_id in ids_to_delete:
+        try:
+            supabase().from_("clauses").delete().eq("clause_id", clause_id).execute()
+            deleted_count += 1
+        except Exception as e:
+            delete_errors.append(f"clause_id '{clause_id}': {e}")
+
+    for err in delete_errors:
+        flash(f"Delete failed — {err}", "error")
+
+    if deleted_count:
+        noun = "clause" if deleted_count == 1 else "clauses"
+        ids_preview = ", ".join(ids_to_delete[:10])
+        if len(ids_to_delete) > 10:
+            ids_preview += f" … and {len(ids_to_delete) - 10} more"
+        flash(
+            f"Deleted {deleted_count} {noun}: {ids_preview}.",
+            "success",
+        )
+
+    return redirect(url_for("admin_home"))
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="127.0.0.1", port=5051)
