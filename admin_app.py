@@ -759,6 +759,31 @@ def delete_user(user_id: str):
     return redirect(url_for("admin_users"))
 
 
+@app.post("/admin/users/<user_id>/reset-password")
+@login_required
+def reset_user_password(user_id: str):
+    if user_id == session.get("user_id"):
+        return jsonify({"ok": False, "message": "Use the manual Supabase method to reset your own password."})
+
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not new_password or not confirm_password:
+        return jsonify({"ok": False, "message": "Both password fields are required."})
+    if len(new_password) < 8:
+        return jsonify({"ok": False, "message": "Password must be at least 8 characters."})
+    if new_password != confirm_password:
+        return jsonify({"ok": False, "message": "Passwords do not match."})
+
+    result = supabase().from_("admin_users").select("id").eq("id", user_id).limit(1).execute()
+    if not (result.data or []):
+        return jsonify({"ok": False, "message": "User not found."})
+
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    supabase().from_("admin_users").update({"password_hash": password_hash}).eq("id", user_id).execute()
+    return jsonify({"ok": True, "message": "Password reset successfully."})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5051))
     app.run(debug=False, host="0.0.0.0", port=port)
