@@ -8,6 +8,7 @@ from datetime import timedelta
 from urllib.parse import urlencode
 
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from services import (
     OPENAI_EMBEDDING_MODEL,
@@ -17,8 +18,16 @@ from services import (
 )
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = os.environ["SECRET_KEY"]
 app.permanent_session_lifetime = timedelta(hours=8)
+
+
+@app.after_request
+def no_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 TEMPLATE_HEADERS = [
     "clause_id", "document", "page", "citation",
