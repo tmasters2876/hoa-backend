@@ -1,0 +1,89 @@
+{% extends "admin_base.html" %}
+
+{% block content %}
+<section class="grid">
+
+  <aside class="stack">
+
+    <div class="panel">
+      <a href="{{ url_for('admin_home') }}" style="font-size:0.92rem;">&larr; Back to Clauses</a>
+    </div>
+
+    <div class="panel">
+      <h2>Add User</h2>
+      <p class="muted">New users are active by default. Passwords are stored as bcrypt hashes — they cannot be recovered, only reset.</p>
+      <form method="post" action="{{ url_for('create_user') }}" class="stack" autocomplete="off" style="margin-top:12px;">
+        <div>
+          <label for="new_username">Username</label>
+          <input id="new_username" name="username" type="text" autocomplete="off" required>
+        </div>
+        <div>
+          <label for="new_password">Password</label>
+          <input id="new_password" name="password" type="password" autocomplete="new-password" required>
+        </div>
+        <button type="submit">Add User</button>
+      </form>
+    </div>
+
+  </aside>
+
+  <section class="stack">
+
+    <div class="panel">
+      <h2>Admin Users</h2>
+      <p class="muted">{{ users | length }} user{% if users | length != 1 %}s{% endif %}. You cannot deactivate or delete your own account.</p>
+
+      <table class="result-table" style="margin-top: 14px;">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>
+                {{ user.username }}
+                {% if user.id == current_user_id %}
+                  <span class="pill" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;">you</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if user.is_active %}
+                  <span class="pill ok">active</span>
+                {% else %}
+                  <span class="pill stale">inactive</span>
+                {% endif %}
+              </td>
+              <td class="clause-meta">{{ user.created_at[:10] if user.created_at else '—' }}</td>
+              <td>
+                {% if user.id != current_user_id %}
+                  <div class="button-row" style="gap: 6px;">
+                    <form method="post" action="{{ url_for('toggle_user', user_id=user.id) }}">
+                      <button class="warn" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">
+                        {{ 'Deactivate' if user.is_active else 'Activate' }}
+                      </button>
+                    </form>
+                    <form method="post" action="{{ url_for('delete_user', user_id=user.id) }}"
+                          onsubmit="return confirm('Delete user \'{{ user.username }}\'?\n\nThis cannot be undone.');">
+                      <button class="danger" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">Delete</button>
+                    </form>
+                  </div>
+                {% else %}
+                  <span class="muted" style="font-size: 0.84rem;">—</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="muted">No users found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+</section>
+{% endblock %}

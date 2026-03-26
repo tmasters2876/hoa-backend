@@ -1,11 +1,12 @@
 import csv
 import functools
-import hmac
 import io
 import math
 import os
 from datetime import timedelta
 from urllib.parse import urlencode
+
+import bcrypt
 
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -45,15 +46,27 @@ PAGE_SIZE = 25
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-def check_credentials(username: str, password: str) -> bool:
-    expected_user = os.environ.get("ADMIN_USERNAME", "")
-    expected_pass = os.environ.get("ADMIN_PASSWORD", "")
-    if not expected_user or not expected_pass:
-        return False
-    return (
-        hmac.compare_digest(username, expected_user)
-        and hmac.compare_digest(password, expected_pass)
+def lookup_and_verify_user(username: str, password: str) -> dict | None:
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("id,username,password_hash,is_active")
+        .eq("username", username)
+        .limit(1)
+        .execute()
     )
+    rows = result.data or []
+    if not rows:
+        return None
+    user = rows[0]
+    if not user.get("is_active"):
+        return None
+    try:
+        if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
+            return user
+    except Exception:
+        pass
+    return None
 
 
 def login_required(f):
@@ -214,9 +227,12 @@ def login():
 def login_post():
     username = request.form.get("username", "")
     password = request.form.get("password", "")
-    if check_credentials(username, password):
+    user = lookup_and_verify_user(username, password)
+    if user:
         session.permanent = True
         session["logged_in"] = True
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
         return redirect(url_for("admin_home"))
     flash("Invalid username or password.", "error")
     return render_template("admin_login.html"), 401
@@ -649,6 +665,98 @@ def bulk_delete_clauses():
         flash(f"Deleted {deleted_count} {noun}: {ids_preview}.", "success")
 
     return redirect(url_for("admin_home"))
+
+
+# ── User management routes ────────────────────────────────────────────────────
+
+@app.get("/admin/users")
+@login_required
+def admin_users():
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("id,username,is_active,created_at")
+        .order("created_at")
+        .execute()
+    )
+    return render_template(
+        "admin_users.html",
+        users=result.data or [],
+        current_user_id=session.get("user_id"),
+    )
+
+
+@app.post("/admin/users")
+@login_required
+def create_user():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "").strip()
+    if not username or not password:
+        flash("Username and password are both required.", "error")
+        return redirect(url_for("admin_users"))
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    try:
+        supabase().from_("admin_users").insert({
+            "username": username,
+            "password_hash": password_hash,
+        }).execute()
+        flash(f"User '{username}' created.", "success")
+    except Exception as e:
+        if "unique" in str(e).lower():
+            flash(f"Username '{username}' already exists.", "error")
+        else:
+            flash(f"Could not create user: {e}", "error")
+    return redirect(url_for("admin_users"))
+
+
+@app.post("/admin/users/<user_id>/toggle")
+@login_required
+def toggle_user(user_id: str):
+    if user_id == session.get("user_id"):
+        flash("You cannot deactivate your own account.", "error")
+        return redirect(url_for("admin_users"))
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("username,is_active")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    user = rows[0]
+    new_status = not user["is_active"]
+    supabase().from_("admin_users").update({"is_active": new_status}).eq("id", user_id).execute()
+    verb = "activated" if new_status else "deactivated"
+    flash(f"User '{user['username']}' {verb}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.post("/admin/users/<user_id>/delete")
+@login_required
+def delete_user(user_id: str):
+    if user_id == session.get("user_id"):
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("admin_users"))
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("username")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    username = rows[0]["username"]
+    supabase().from_("admin_users").delete().eq("id", user_id).execute()
+    flash(f"User '{username}' deleted.", "success")
+    return redirect(url_for("admin_users"))
 
 
 if __name__ == "__main__":
