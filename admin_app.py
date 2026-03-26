@@ -1,9 +1,13 @@
 import csv
+import functools
+import hmac
 import io
 import math
+import os
+from datetime import timedelta
 from urllib.parse import urlencode
 
-from flask import Flask, Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 from services import (
     OPENAI_EMBEDDING_MODEL,
@@ -13,7 +17,8 @@ from services import (
 )
 
 app = Flask(__name__)
-app.secret_key = "hoa-admin-local"
+app.secret_key = os.environ["SECRET_KEY"]
+app.permanent_session_lifetime = timedelta(hours=8)
 
 TEMPLATE_HEADERS = [
     "clause_id", "document", "page", "citation",
@@ -28,6 +33,30 @@ CLAUSE_COLUMNS = (
 )
 PAGE_SIZE = 25
 
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+def check_credentials(username: str, password: str) -> bool:
+    expected_user = os.environ.get("ADMIN_USERNAME", "")
+    expected_pass = os.environ.get("ADMIN_PASSWORD", "")
+    if not expected_user or not expected_pass:
+        return False
+    return (
+        hmac.compare_digest(username, expected_user)
+        and hmac.compare_digest(password, expected_pass)
+    )
+
+
+def login_required(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return wrapper
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def supabase():
     return get_supabase_client()
@@ -122,11 +151,7 @@ def browse_clauses(keyword: str, tag: str, document: str, page: int) -> tuple[li
 
 
 def run_search_test(question: str, limit: int = 8) -> dict:
-    results = {
-        "question": question,
-        "vector": [],
-        "keyword": [],
-    }
+    results = {"question": question, "vector": [], "keyword": []}
     if not question.strip():
         return results
 
@@ -167,17 +192,50 @@ def index_redirect():
     return redirect(url_for("admin_home"))
 
 
-@app.get("/")
-def root():
-    return index_redirect()
+# ── Auth routes ───────────────────────────────────────────────────────────────
 
+@app.get("/login")
+def login():
+    if session.get("logged_in"):
+        return redirect(url_for("admin_home"))
+    return render_template("admin_login.html")
+
+
+@app.post("/login")
+def login_post():
+    username = request.form.get("username", "")
+    password = request.form.get("password", "")
+    if check_credentials(username, password):
+        session.permanent = True
+        session["logged_in"] = True
+        return redirect(url_for("admin_home"))
+    flash("Invalid username or password.", "error")
+    return render_template("admin_login.html"), 401
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ── Public routes ─────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
     return {"ok": True}
 
 
+# ── Protected routes ──────────────────────────────────────────────────────────
+
+@app.get("/")
+@login_required
+def root():
+    return index_redirect()
+
+
 @app.get("/admin")
+@login_required
 def admin_home():
     filters = current_filters()
     clauses, total_count = browse_clauses(
@@ -224,6 +282,7 @@ def admin_home():
 
 
 @app.post("/admin/clauses")
+@login_required
 def create_clause():
     payload = {
         "clause_id": request.form.get("clause_id", "").strip() or None,
@@ -244,6 +303,7 @@ def create_clause():
 
 
 @app.post("/admin/clauses/<clause_id>/update")
+@login_required
 def update_clause(clause_id: str):
     existing = fetch_clause(clause_id)
     if not existing:
@@ -283,6 +343,7 @@ def update_clause(clause_id: str):
 
 
 @app.post("/admin/clauses/<clause_id>/update-json")
+@login_required
 def update_clause_json(clause_id: str):
     existing = fetch_clause(clause_id)
     if not existing:
@@ -314,15 +375,12 @@ def update_clause_json(clause_id: str):
     supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
 
     embedding_stale = text_changed or not existing.get("embedding")
-    if text_changed:
-        message = "Saved. Text changed — embedding is now stale."
-    else:
-        message = "Metadata saved."
-
+    message = "Saved. Text changed — embedding is now stale." if text_changed else "Metadata saved."
     return jsonify({"ok": True, "message": message, "embedding_stale": embedding_stale})
 
 
 @app.post("/admin/clauses/<clause_id>/delete")
+@login_required
 def delete_clause(clause_id: str):
     supabase().from_("clauses").delete().eq("id", clause_id).execute()
     flash(f"Deleted clause {clause_id}.", "success")
@@ -330,6 +388,7 @@ def delete_clause(clause_id: str):
 
 
 @app.post("/admin/clauses/<clause_id>/regenerate-embedding")
+@login_required
 def regenerate_clause_embedding(clause_id: str):
     clause = fetch_clause(clause_id)
     if not clause:
@@ -353,6 +412,7 @@ def regenerate_clause_embedding(clause_id: str):
 
 
 @app.get("/admin/import/template")
+@login_required
 def import_template():
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=TEMPLATE_HEADERS)
@@ -378,6 +438,7 @@ def import_template():
 
 
 @app.post("/admin/import")
+@login_required
 def import_clauses():
     file = request.files.get("csv_file")
     if not file or not file.filename:
@@ -400,7 +461,6 @@ def import_clauses():
 
     headers = {h.strip() for h in reader.fieldnames}
 
-    # --- Header validation ---
     unknown = headers - IMPORTABLE_COLUMNS
     if unknown:
         flash(
@@ -414,11 +474,10 @@ def import_clauses():
         flash("CSV must contain at least a 'clause_text' or 'plain_summary' column.", "error")
         return redirect(url_for("admin_home"))
 
-    # --- Row validation ---
     rows_ok = []
     row_errors = []
 
-    for i, row in enumerate(reader, start=2):  # row 1 is the header
+    for i, row in enumerate(reader, start=2):
         errors = []
 
         page_raw = (row.get("page") or "").strip()
@@ -482,6 +541,7 @@ def import_clauses():
 
 
 @app.get("/admin/bulk-delete/template")
+@login_required
 def bulk_delete_template():
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=TEMPLATE_HEADERS)
@@ -507,6 +567,7 @@ def bulk_delete_template():
 
 
 @app.post("/admin/bulk-delete")
+@login_required
 def bulk_delete_clauses():
     file = request.files.get("delete_csv_file")
     if not file or not file.filename:
@@ -529,7 +590,6 @@ def bulk_delete_clauses():
 
     headers = {h.strip() for h in reader.fieldnames}
 
-    # --- Header validation ---
     unknown = headers - IMPORTABLE_COLUMNS
     if unknown:
         flash(
@@ -543,7 +603,6 @@ def bulk_delete_clauses():
         flash("CSV must contain a 'clause_id' column — this is used to identify rows for deletion.", "error")
         return redirect(url_for("admin_home"))
 
-    # --- Row validation and collection ---
     ids_to_delete = []
     row_errors = []
 
@@ -561,7 +620,6 @@ def bulk_delete_clauses():
         flash("No valid clause_id values found — nothing deleted.", "error")
         return redirect(url_for("admin_home"))
 
-    # --- Delete ---
     deleted_count = 0
     delete_errors = []
     for clause_id in ids_to_delete:
@@ -579,10 +637,7 @@ def bulk_delete_clauses():
         ids_preview = ", ".join(ids_to_delete[:10])
         if len(ids_to_delete) > 10:
             ids_preview += f" … and {len(ids_to_delete) - 10} more"
-        flash(
-            f"Deleted {deleted_count} {noun}: {ids_preview}.",
-            "success",
-        )
+        flash(f"Deleted {deleted_count} {noun}: {ids_preview}.", "success")
 
     return redirect(url_for("admin_home"))
 
