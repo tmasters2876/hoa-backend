@@ -43,6 +43,8 @@ CLAUSE_COLUMNS = (
 )
 PAGE_SIZE = 25
 
+SUPERUSERS = {'tmasters', 'cmasters'}
+
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,18 @@ def login_required(f):
     def wrapper(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def superuser_required(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        if session.get("username") not in SUPERUSERS:
+            flash("You do not have permission to manage users.", "error")
+            return redirect(url_for("admin_home"))
         return f(*args, **kwargs)
     return wrapper
 
@@ -692,11 +706,12 @@ def admin_users():
         "admin_users.html",
         users=result.data or [],
         current_user_id=session.get("user_id"),
+        is_superuser=session.get("username") in SUPERUSERS,
     )
 
 
 @app.post("/admin/users")
-@login_required
+@superuser_required
 def create_user():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "").strip()
@@ -719,7 +734,7 @@ def create_user():
 
 
 @app.post("/admin/users/<user_id>/toggle")
-@login_required
+@superuser_required
 def toggle_user(user_id: str):
     if user_id == session.get("user_id"):
         flash("You cannot deactivate your own account.", "error")
@@ -745,7 +760,7 @@ def toggle_user(user_id: str):
 
 
 @app.post("/admin/users/<user_id>/delete")
-@login_required
+@superuser_required
 def delete_user(user_id: str):
     if user_id == session.get("user_id"):
         flash("You cannot delete your own account.", "error")
@@ -769,7 +784,7 @@ def delete_user(user_id: str):
 
 
 @app.post("/admin/users/<user_id>/reset-password")
-@login_required
+@superuser_required
 def reset_user_password(user_id: str):
     if user_id == session.get("user_id"):
         return jsonify({"ok": False, "message": "Use the manual Supabase method to reset your own password."})
@@ -791,6 +806,48 @@ def reset_user_password(user_id: str):
     password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
     supabase().from_("admin_users").update({"password_hash": password_hash}).eq("id", user_id).execute()
     return jsonify({"ok": True, "message": "Password reset successfully."})
+
+
+@app.post("/admin/users/change-password")
+@login_required
+def change_own_password():
+    user_id = session.get("user_id")
+    current_password = request.form.get("current_password", "")
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({"ok": False, "message": "All three fields are required."})
+    if len(new_password) < 8:
+        return jsonify({"ok": False, "message": "New password must be at least 8 characters."})
+    if new_password != confirm_password:
+        return jsonify({"ok": False, "message": "New passwords do not match."})
+
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("password_hash")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return jsonify({"ok": False, "message": "User not found."})
+
+    stored_hash = rows[0]["password_hash"]
+    try:
+        if not bcrypt.checkpw(current_password.encode(), stored_hash.encode()):
+            return jsonify({"ok": False, "message": "Current password is incorrect."})
+    except Exception:
+        return jsonify({"ok": False, "message": "Could not verify current password."})
+
+    if bcrypt.checkpw(new_password.encode(), stored_hash.encode()):
+        return jsonify({"ok": False, "message": "New password must be different from the current password."})
+
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    supabase().from_("admin_users").update({"password_hash": password_hash}).eq("id", user_id).execute()
+    return jsonify({"ok": True, "message": "Password changed successfully."})
 
 
 if __name__ == "__main__":

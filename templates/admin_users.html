@@ -33,6 +33,7 @@
       <a href="{{ url_for('admin_home') }}" style="font-size:0.92rem;">&larr; Back to Clauses</a>
     </div>
 
+    {% if is_superuser %}
     <div class="panel">
       <h2>Add User</h2>
       <p class="muted">New users are active by default. Passwords are stored as bcrypt hashes — they cannot be recovered, only reset.</p>
@@ -48,14 +49,44 @@
         <button type="submit">Add User</button>
       </form>
     </div>
+    {% endif %}
 
   </aside>
 
   <section class="stack">
 
+    <details class="panel reset-pw-details" style="padding: 16px 20px;">
+      <summary style="font-size: 1rem; font-weight: 700; color: var(--text);">Change My Password</summary>
+      <form data-change-pw
+            action="{{ url_for('change_own_password') }}"
+            class="reset-pw-form"
+            autocomplete="off"
+            style="margin-top: 12px;">
+        <div>
+          <label>Current Password</label>
+          <input type="password" name="current_password" autocomplete="current-password" minlength="8" required>
+        </div>
+        <div>
+          <label>New Password</label>
+          <input type="password" name="new_password" autocomplete="new-password" minlength="8" required>
+        </div>
+        <div>
+          <label>Confirm New Password</label>
+          <input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="submit" style="flex: 0 0 auto; font-size: 0.82rem; padding: 6px 14px;">Change Password</button>
+          <div class="inline-feedback"></div>
+        </div>
+      </form>
+    </details>
+
     <div class="panel">
       <h2>Admin Users</h2>
       <p class="muted">{{ users | length }} user{% if users | length != 1 %}s{% endif %}. You cannot deactivate, delete, or reset the password of your own account from this page.</p>
+      {% if not is_superuser %}
+      <p class="muted" style="margin-top: 6px;">Contact tmasters or cmasters to manage user accounts.</p>
+      {% endif %}
 
       <table class="result-table" style="margin-top: 14px;">
         <thead>
@@ -84,7 +115,7 @@
               </td>
               <td class="clause-meta">{{ user.created_at[:10] if user.created_at else '—' }}</td>
               <td>
-                {% if user.id != current_user_id %}
+                {% if user.id != current_user_id and is_superuser %}
                   <div class="button-row" style="gap: 6px;">
                     <form method="post" action="{{ url_for('toggle_user', user_id=user.id) }}">
                       <button class="warn" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">
@@ -136,6 +167,54 @@
 (function () {
   document.addEventListener('submit', function (e) {
     var form = e.target;
+
+    if (form.hasAttribute('data-change-pw')) {
+      e.preventDefault();
+      var cur = form.querySelector('[name="current_password"]').value;
+      var pw = form.querySelector('[name="new_password"]').value;
+      var cpw = form.querySelector('[name="confirm_password"]').value;
+      var feedback = form.querySelector('.inline-feedback');
+      var btn = form.querySelector('button[type="submit"]');
+      var orig = btn.textContent;
+
+      if (pw.length < 8) {
+        feedback.textContent = 'New password must be at least 8 characters.';
+        feedback.className = 'inline-feedback err';
+        return;
+      }
+      if (pw !== cpw) {
+        feedback.textContent = 'New passwords do not match.';
+        feedback.className = 'inline-feedback err';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Saving\u2026';
+      feedback.textContent = '';
+      feedback.className = 'inline-feedback';
+
+      fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          btn.disabled = false;
+          btn.textContent = orig;
+          feedback.textContent = data.message;
+          feedback.className = 'inline-feedback ' + (data.ok ? 'ok' : 'err');
+          if (data.ok) {
+            form.reset();
+            var details = form.closest('details');
+            if (details) details.removeAttribute('open');
+          }
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = orig;
+          feedback.textContent = 'Request failed \u2014 try again.';
+          feedback.className = 'inline-feedback err';
+        });
+      return;
+    }
+
     if (!form.hasAttribute('data-reset-pw')) return;
     e.preventDefault();
 
