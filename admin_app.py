@@ -133,8 +133,13 @@ def get_filter_options() -> tuple[list[str], list[str]]:
     return documents, tags
 
 
+def sanitize_keyword(keyword: str) -> str:
+    """Strip characters that break Supabase .or_() filter syntax."""
+    return keyword.translate(str.maketrans("", "", ",()``"))
+
+
 def build_keyword_filter(keyword: str) -> str:
-    pattern = f"%{keyword.strip()}%"
+    pattern = f"%{sanitize_keyword(keyword).strip()}%"
     return (
         f"clause_id.ilike.{pattern},"
         f"citation.ilike.{pattern},"
@@ -263,12 +268,16 @@ def root():
 @login_required
 def admin_home():
     filters = current_filters()
-    clauses, total_count = browse_clauses(
-        keyword=filters["q"],
-        tag=filters["tag"],
-        document=filters["document"],
-        page=filters["page"],
-    )
+    try:
+        clauses, total_count = browse_clauses(
+            keyword=filters["q"],
+            tag=filters["tag"],
+            document=filters["document"],
+            page=filters["page"],
+        )
+    except Exception:
+        flash("Search filter could not be applied — showing all clauses.", "error")
+        clauses, total_count = browse_clauses(keyword="", tag=filters["tag"], document=filters["document"], page=1)
     documents, tags = get_filter_options()
     search_test = run_search_test(filters["test_query"]) if filters["test_query"] else None
 
