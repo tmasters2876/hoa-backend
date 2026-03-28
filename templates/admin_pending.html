@@ -99,6 +99,21 @@
     font-size: 0.9rem;
   }
   .pagination a { font-weight: 700; }
+  .verify-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .verify-badge.verified  { background: rgba(11,110,79,0.13);  color: #0b6e4f; }
+  .verify-badge.partial   { background: rgba(209,123,15,0.13); color: #7f4b09; }
+  .verify-badge.not_found { background: rgba(161,45,47,0.13);  color: #a12d2f; }
+  .verify-badge.skipped   { background: rgba(0,0,0,0.07);      color: #58656d; }
+  .verify-note { font-size: 0.72rem; color: var(--muted); margin-top: 3px; font-style: italic; }
 </style>
 
 <div class="stack" style="margin-top: 20px;">
@@ -147,6 +162,7 @@
             <th>Clause ID</th>
             <th>Citation</th>
             <th>What changed</th>
+            <th>Source Verify</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -199,6 +215,25 @@
                   {% endif %}
                 {% endfor %}
                 {% if ns.shown == 0 %}<span class="muted">no field changes</span>{% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if entry.action == 'delete' %}
+                <span class="muted" style="font-size:0.82rem;">—</span>
+              {% else %}
+                {% set verif = (entry.proposed_changes or {}).get("_verification") or {} %}
+                {% set vstatus = verif.get("status") or "skipped" %}
+                {% set vscore = verif.get("score") or 0 %}
+                {% if vstatus == "verified" %}
+                  <span class="verify-badge verified">✅ Verified ({{ vscore }}%)</span>
+                {% elif vstatus == "partial" %}
+                  <span class="verify-badge partial">⚠️ Partial ({{ vscore }}%)</span>
+                {% elif vstatus == "not_found" %}
+                  <span class="verify-badge not_found">❌ Not Found ({{ vscore }}%)</span>
+                {% else %}
+                  <span class="verify-badge skipped">⏭ Skipped</span>
+                {% endif %}
+                <div class="verify-note">Auto text match vs. source PDF</div>
               {% endif %}
             </td>
             <td style="min-width:140px;">

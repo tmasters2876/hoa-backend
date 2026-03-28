@@ -3,10 +3,14 @@ import functools
 import io
 import math
 import os
-from datetime import timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import bcrypt
+import pdfplumber
+import requests as http_requests
+from rapidfuzz import fuzz
 
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -313,8 +317,70 @@ def _log_clause_field_changes(record_id, existing, new_payload):
             )
 
 
-def submit_pending_change(clause_uuid, action: str, proposed_changes=None, original_values=None) -> str | None:
-    """Insert a pending_changes row and return its id, or None on failure."""
+def extract_google_drive_id(url: str) -> str | None:
+    """Return the file ID from any common Google Drive URL format."""
+    if not url:
+        return None
+    m = re.search(r'/file/d/([^/?#]+)', url)
+    if m:
+        return m.group(1)
+    m = re.search(r'[?&]id=([^&#]+)', url)
+    if m:
+        return m.group(1)
+    return None
+
+
+def download_pdf_page_text(drive_url: str, page_number: int) -> str | None:
+    """Download a single PDF page from Google Drive and return its text."""
+    try:
+        file_id = extract_google_drive_id(drive_url)
+        if not file_id:
+            return None
+        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        response = http_requests.get(download_url, timeout=10)
+        if response.status_code != 200:
+            return None
+        with pdfplumber.open(io.BytesIO(response.content)) as pdf:
+            idx = page_number - 1
+            if idx < 0 or idx >= len(pdf.pages):
+                return None
+            return pdf.pages[idx].extract_text() or ""
+    except Exception:
+        return None
+
+
+def verify_clause_against_source(clause_text: str, link: str, page: int) -> dict:
+    """Fuzzy-match clause_text against the stated PDF page. Always returns a dict."""
+    if not clause_text:
+        return {"status": "skipped", "score": 0, "reason": "No clause text to verify"}
+    page_text = download_pdf_page_text(link, page)
+    if page_text is None:
+        return {"status": "skipped", "score": 0, "reason": "Could not access PDF"}
+    if not page_text.strip():
+        return {"status": "skipped", "score": 0, "reason": "PDF page returned no text"}
+    score = fuzz.partial_ratio(clause_text.lower(), page_text.lower())
+    if score >= 80:
+        return {"status": "verified", "score": score, "reason": f"Text found on page {page}"}
+    if score >= 50:
+        return {"status": "partial", "score": score, "reason": f"Partial match on page {page}"}
+    return {"status": "not_found", "score": score, "reason": f"Text not found on page {page}"}
+
+
+def submit_pending_change(clause_uuid, action: str, proposed_changes=None, original_values=None) -> dict | None:
+    """Insert a pending_changes row. Returns {"id": ..., "verification": ...} or None on failure."""
+    verification = None
+    if action in ("create", "edit") and proposed_changes:
+        clause_text = (proposed_changes.get("clause_text") or "").strip()
+        link = (proposed_changes.get("link") or "").strip()
+        page = proposed_changes.get("page")
+        if clause_text and link and page:
+            verification = verify_clause_against_source(clause_text, link, int(page))
+        else:
+            verification = {"status": "skipped", "score": 0, "reason": "Missing text, link, or page"}
+        verification["verified_at"] = datetime.now(timezone.utc).isoformat()
+        proposed_changes = dict(proposed_changes)
+        proposed_changes["_verification"] = verification
+
     try:
         result = supabase().from_("pending_changes").insert({
             "clause_id": str(clause_uuid) if clause_uuid is not None else None,
@@ -325,7 +391,8 @@ def submit_pending_change(clause_uuid, action: str, proposed_changes=None, origi
             "status": "pending",
         }).execute()
         rows = result.data or []
-        return rows[0].get("id") if rows else None
+        change_id = rows[0].get("id") if rows else None
+        return {"id": change_id, "verification": verification}
     except Exception as e:
         print(f"[pending] WARNING: failed to write pending_changes: {e}")
         return None
@@ -471,17 +538,21 @@ def create_clause():
     inserted_id = (result.data or [{}])[0].get("id")
 
     proposed_for_log = {k: v for k, v in payload.items() if k not in ("embedding", "status")}
-    submit_pending_change(
+    pending_result = submit_pending_change(
         clause_uuid=inserted_id,
         action="create",
         proposed_changes=proposed_for_log,
         original_values=None,
     )
+    verif = (pending_result or {}).get("verification") or {}
+    v_status = verif.get("status", "skipped")
+    v_score = verif.get("score", 0)
+    verif_note = f"source: {v_status} ({v_score}%)" if v_status != "skipped" else "source: skipped"
     log_audit_event(
         action="change_submitted",
         clause_id=payload.get("clause_id"),
         record_id=inserted_id,
-        notes="create" + (" (self-approved)" if self_approve else ""),
+        notes=f"create; {verif_note}" + (" (self-approved)" if self_approve else ""),
     )
     if self_approve:
         flash("Clause added and self-approved. Embedding is marked stale until you regenerate it.", "success")
@@ -537,14 +608,18 @@ def update_clause(clause_id: str):
                         record_id=clause_id, notes="edit self-approved")
         flash("Edit self-approved and applied." + (" Embedding marked stale." if text_changed else ""), "success")
     else:
-        submit_pending_change(
+        pending_result = submit_pending_change(
             clause_uuid=clause_id,
             action="edit",
             proposed_changes=payload,
             original_values=original_for_log,
         )
+        verif = (pending_result or {}).get("verification") or {}
+        v_status = verif.get("status", "skipped")
+        v_score = verif.get("score", 0)
+        verif_note = f"source: {v_status} ({v_score}%)" if v_status != "skipped" else "source: skipped"
         log_audit_event(action="change_submitted", clause_id=payload.get("clause_id") or existing.get("clause_id"),
-                        record_id=clause_id, notes="edit")
+                        record_id=clause_id, notes=f"edit; {verif_note}")
         flash("Edit submitted for approval — the live clause is unchanged until a second admin approves.", "success")
     return redirect(url_for("admin_home"))
 
@@ -595,14 +670,18 @@ def update_clause_json(clause_id: str):
         msg = "⚠ Self-approved and applied." + (" Embedding now stale." if text_changed else "")
         return jsonify({"ok": True, "message": msg, "embedding_stale": embedding_stale, "pending": False})
     else:
-        submit_pending_change(
+        pending_result = submit_pending_change(
             clause_uuid=clause_id,
             action="edit",
             proposed_changes=payload,
             original_values=original_for_log,
         )
+        verif = (pending_result or {}).get("verification") or {}
+        v_status = verif.get("status", "skipped")
+        v_score = verif.get("score", 0)
+        verif_note = f"source: {v_status} ({v_score}%)" if v_status != "skipped" else "source: skipped"
         log_audit_event(action="change_submitted", clause_id=payload.get("clause_id") or existing.get("clause_id"),
-                        record_id=clause_id, notes="edit")
+                        record_id=clause_id, notes=f"edit; {verif_note}")
         return jsonify({"ok": True, "message": "Edit submitted for approval.", "embedding_stale": False, "pending": True})
 
 
@@ -1235,7 +1314,6 @@ def approve_pending(change_id: str):
 
     _apply_pending_change(change)
 
-    from datetime import datetime, timezone
     supabase().from_("pending_changes").update({
         "status": "approved",
         "reviewed_by": reviewer,
@@ -1281,7 +1359,6 @@ def reject_pending(change_id: str):
     if change["action"] == "create":
         supabase().from_("clauses").delete().eq("id", change["clause_id"]).execute()
 
-    from datetime import datetime, timezone
     supabase().from_("pending_changes").update({
         "status": "rejected",
         "reviewed_by": session.get("username"),
