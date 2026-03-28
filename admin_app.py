@@ -59,7 +59,7 @@ def lookup_and_verify_user(username: str, password: str) -> dict | None:
         supabase()
         .from_("admin_users")
         .select("id,username,password_hash,is_active")
-        .eq("username", username)
+        .eq("username", username.lower())
         .limit(1)
         .execute()
     )
@@ -1026,7 +1026,7 @@ def admin_users():
 @app.post("/admin/users")
 @superuser_required
 def create_user():
-    username = request.form.get("username", "").strip()
+    username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "").strip()
     if not username or not password:
         flash("Username and password are both required.", "error")
