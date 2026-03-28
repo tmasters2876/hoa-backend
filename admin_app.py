@@ -1,6 +1,7 @@
 import csv
 import functools
 import io
+import json
 import math
 import os
 from datetime import timedelta
@@ -42,6 +43,7 @@ CLAUSE_COLUMNS = (
     "embedding,match_source,tags,created_at,precedence_level"
 )
 PAGE_SIZE = 25
+AUDIT_PAGE_SIZE = 50
 
 SUPERUSERS = {'tmasters', 'cmasters'}
 
@@ -233,6 +235,55 @@ def index_redirect():
     return redirect(url_for("admin_home"))
 
 
+@app.context_processor
+def inject_superuser():
+    return {"is_superuser": session.get("username") in SUPERUSERS}
+
+
+# ── Audit log ─────────────────────────────────────────────────────────────────
+
+def log_audit_event(action, clause_id=None, record_id=None,
+                    field_changed=None, old_value=None, new_value=None, notes=None):
+    try:
+        supabase().from_("clause_audit_log").insert({
+            "action": action,
+            "clause_id": clause_id,
+            "record_id": str(record_id) if record_id is not None else None,
+            "changed_by": session.get("username"),
+            "field_changed": field_changed,
+            "old_value": str(old_value)[:2000] if old_value is not None else None,
+            "new_value": str(new_value)[:2000] if new_value is not None else None,
+            "notes": notes,
+        }).execute()
+    except Exception as e:
+        print(f"[audit] WARNING: failed to write audit log: {e}")
+
+
+_CLAUSE_TRACKED_FIELDS = [
+    "clause_id", "document", "page", "citation",
+    "clause_text", "plain_summary", "link", "tags", "precedence_level",
+]
+
+def _log_clause_field_changes(record_id, existing, new_payload):
+    """Log one audit row per changed clause field."""
+    text_clause_id = (new_payload.get("clause_id") or existing.get("clause_id"))
+    for field in _CLAUSE_TRACKED_FIELDS:
+        old = existing.get(field)
+        new = new_payload.get(field)
+        # Normalise for comparison: treat None and "" as equivalent
+        old_str = str(old) if old is not None else ""
+        new_str = str(new) if new is not None else ""
+        if old_str != new_str:
+            log_audit_event(
+                action="updated",
+                clause_id=text_clause_id,
+                record_id=record_id,
+                field_changed=field,
+                old_value=old_str or None,
+                new_value=new_str or None,
+            )
+
+
 # ── Auth routes ───────────────────────────────────────────────────────────────
 
 @app.get("/login")
@@ -345,7 +396,14 @@ def create_clause():
         "match_source": "Admin Added",
         "embedding": None,
     }
-    supabase().from_("clauses").insert(payload).execute()
+    result = supabase().from_("clauses").insert(payload).execute()
+    inserted_id = (result.data or [{}])[0].get("id")
+    log_audit_event(
+        action="created",
+        clause_id=payload.get("clause_id"),
+        record_id=inserted_id,
+        new_value=json.dumps({k: v for k, v in payload.items() if k != "embedding"}, default=str),
+    )
     flash("Clause added. Embedding is marked stale until you regenerate it.", "success")
     return redirect(url_for("admin_home"))
 
@@ -382,6 +440,8 @@ def update_clause(clause_id: str):
         payload["match_source"] = "Admin Edited (Embedding Stale)"
 
     supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+
+    _log_clause_field_changes(clause_id, existing, payload)
 
     if text_changed:
         flash("Clause updated. Text changed, so the embedding was marked stale.", "success")
@@ -422,6 +482,8 @@ def update_clause_json(clause_id: str):
 
     supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
 
+    _log_clause_field_changes(clause_id, existing, payload)
+
     embedding_stale = text_changed or not existing.get("embedding")
     message = "Saved. Text changed — embedding is now stale." if text_changed else "Metadata saved."
     return jsonify({"ok": True, "message": message, "embedding_stale": embedding_stale})
@@ -430,7 +492,14 @@ def update_clause_json(clause_id: str):
 @app.post("/admin/clauses/<clause_id>/delete")
 @login_required
 def delete_clause(clause_id: str):
+    existing = fetch_clause(clause_id)
     supabase().from_("clauses").delete().eq("id", clause_id).execute()
+    log_audit_event(
+        action="deleted",
+        clause_id=existing.get("clause_id") if existing else None,
+        record_id=clause_id,
+        old_value=(existing.get("clause_text") or "")[:2000] if existing else None,
+    )
     flash(f"Deleted clause {clause_id}.", "success")
     return redirect(url_for("admin_home"))
 
@@ -455,6 +524,11 @@ def regenerate_clause_embedding(clause_id: str):
             "match_source": "Admin Refreshed Embedding",
         }
     ).eq("id", clause_id).execute()
+    log_audit_event(
+        action="embedding_regenerated",
+        clause_id=clause.get("clause_id"),
+        record_id=clause_id,
+    )
     flash(f"Regenerated embedding for clause {clause_id}.", "success")
     return redirect(url_for("admin_home"))
 
@@ -577,6 +651,10 @@ def import_clauses():
     if rows_ok:
         supabase().from_("clauses").insert(rows_ok).execute()
         n = len(rows_ok)
+        log_audit_event(
+            action="csv_import",
+            notes=f"{n} clause{'s' if n != 1 else ''} imported",
+        )
         flash(
             f"Imported {n} clause{'s' if n != 1 else ''}. "
             "Embeddings are stale — regenerate as needed.",
@@ -685,6 +763,10 @@ def bulk_delete_clauses():
         ids_preview = ", ".join(ids_to_delete[:10])
         if len(ids_to_delete) > 10:
             ids_preview += f" … and {len(ids_to_delete) - 10} more"
+        log_audit_event(
+            action="csv_bulk_delete",
+            notes=f"{deleted_count} {noun} deleted: {ids_preview}",
+        )
         flash(f"Deleted {deleted_count} {noun}: {ids_preview}.", "success")
 
     return redirect(url_for("admin_home"))
@@ -724,6 +806,7 @@ def create_user():
             "username": username,
             "password_hash": password_hash,
         }).execute()
+        log_audit_event(action="user_added", new_value=username)
         flash(f"User '{username}' created.", "success")
     except Exception as e:
         if "unique" in str(e).lower():
@@ -755,6 +838,10 @@ def toggle_user(user_id: str):
     new_status = not user["is_active"]
     supabase().from_("admin_users").update({"is_active": new_status}).eq("id", user_id).execute()
     verb = "activated" if new_status else "deactivated"
+    log_audit_event(
+        action=f"user_{verb}",
+        new_value=user["username"],
+    )
     flash(f"User '{user['username']}' {verb}.", "success")
     return redirect(url_for("admin_users"))
 
@@ -779,6 +866,7 @@ def delete_user(user_id: str):
         return redirect(url_for("admin_users"))
     username = rows[0]["username"]
     supabase().from_("admin_users").delete().eq("id", user_id).execute()
+    log_audit_event(action="user_deleted", new_value=username)
     flash(f"User '{username}' deleted.", "success")
     return redirect(url_for("admin_users"))
 
@@ -803,9 +891,75 @@ def reset_user_password(user_id: str):
     if not (result.data or []):
         return jsonify({"ok": False, "message": "User not found."})
 
+    target = supabase().from_("admin_users").select("username").eq("id", user_id).limit(1).execute()
+    target_username = (target.data or [{}])[0].get("username")
     password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
     supabase().from_("admin_users").update({"password_hash": password_hash}).eq("id", user_id).execute()
+    log_audit_event(action="password_reset", new_value=target_username)
     return jsonify({"ok": True, "message": "Password reset successfully."})
+
+
+@app.get("/admin/audit")
+@superuser_required
+def admin_audit():
+    who = request.args.get("who", "").strip()
+    action_filter = request.args.get("action_filter", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    page = max(1, to_int_or_none(request.args.get("page")) or 1)
+
+    query = supabase().from_("clause_audit_log").select("*", count="exact")
+    if who:
+        query = query.eq("changed_by", who)
+    if action_filter:
+        query = query.eq("action", action_filter)
+    if date_from:
+        query = query.gte("changed_at", date_from)
+    if date_to:
+        # include the full end date by going to end of day
+        query = query.lte("changed_at", date_to + "T23:59:59Z")
+
+    start = (page - 1) * AUDIT_PAGE_SIZE
+    end = start + AUDIT_PAGE_SIZE - 1
+    result = query.order("changed_at", desc=True).range(start, end).execute()
+
+    entries = result.data or []
+    total_count = result.count or 0
+    total_pages = max(1, math.ceil(total_count / AUDIT_PAGE_SIZE))
+
+    # Truncate old/new value for display
+    for entry in entries:
+        for field in ("old_value", "new_value"):
+            val = entry.get(field) or ""
+            entry[f"{field}_display"] = val[:80] + ("…" if len(val) > 80 else "")
+
+    audit_filters = {"who": who, "action_filter": action_filter, "date_from": date_from, "date_to": date_to}
+    query_args = {k: v for k, v in audit_filters.items() if v}
+
+    prev_url = None
+    next_url = None
+    if page > 1:
+        prev_url = url_for("admin_audit") + "?" + urlencode({**query_args, "page": page - 1})
+    if page < total_pages:
+        next_url = url_for("admin_audit") + "?" + urlencode({**query_args, "page": page + 1})
+
+    known_actions = [
+        "created", "updated", "deleted", "embedding_regenerated",
+        "csv_import", "csv_bulk_delete",
+        "user_added", "user_activated", "user_deactivated", "user_deleted", "password_reset",
+    ]
+
+    return render_template(
+        "admin_audit.html",
+        entries=entries,
+        total_count=total_count,
+        total_pages=total_pages,
+        page=page,
+        prev_url=prev_url,
+        next_url=next_url,
+        filters=audit_filters,
+        known_actions=known_actions,
+    )
 
 
 @app.post("/admin/users/change-password")

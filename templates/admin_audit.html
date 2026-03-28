@@ -1,0 +1,183 @@
+{% extends "admin_base.html" %}
+
+{% block content %}
+<style>
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .audit-table th,
+  .audit-table td {
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+  }
+  .audit-table th {
+    font-size: 0.82rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .audit-table td.mono {
+    font-family: ui-monospace, monospace;
+    font-size: 0.82rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .audit-table td.val {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8rem;
+    word-break: break-word;
+    max-width: 220px;
+  }
+  .action-pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .action-pill.created       { background: rgba(11,110,79,0.13);  color: #0b6e4f; }
+  .action-pill.updated       { background: rgba(209,123,15,0.13); color: #7f4b09; }
+  .action-pill.deleted       { background: rgba(161,45,47,0.13);  color: #a12d2f; }
+  .action-pill.embedding_regenerated { background: rgba(11,110,79,0.07); color: #2a7a60; }
+  .action-pill.csv_import    { background: rgba(11,110,79,0.09);  color: #0b6e4f; }
+  .action-pill.csv_bulk_delete { background: rgba(161,45,47,0.09); color: #a12d2f; }
+  .action-pill.user_added    { background: rgba(11,110,79,0.13);  color: #0b6e4f; }
+  .action-pill.user_activated { background: rgba(11,110,79,0.09); color: #0b6e4f; }
+  .action-pill.user_deactivated { background: rgba(209,123,15,0.13); color: #7f4b09; }
+  .action-pill.user_deleted  { background: rgba(161,45,47,0.13);  color: #a12d2f; }
+  .action-pill.password_reset { background: rgba(209,123,15,0.09); color: #7f4b09; }
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .filter-bar .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+  }
+  .filter-bar label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0;
+  }
+  .filter-bar input,
+  .filter-bar select {
+    font-size: 0.88rem;
+    padding: 7px 10px;
+    border-radius: 10px;
+  }
+  .filter-bar button {
+    width: auto;
+    padding: 8px 20px;
+    font-size: 0.88rem;
+    align-self: flex-end;
+  }
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    font-size: 0.9rem;
+  }
+  .pagination a {
+    font-weight: 700;
+  }
+</style>
+
+<div class="stack" style="margin-top: 20px;">
+
+  <div class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">Audit Log</h2>
+      <a href="{{ url_for('admin_home') }}" style="font-size:0.92rem;">&larr; Back to Clauses</a>
+    </div>
+
+    <form method="get" action="{{ url_for('admin_audit') }}" class="filter-bar">
+      <div class="field">
+        <label for="f-who">Who</label>
+        <input id="f-who" name="who" type="text" value="{{ filters.who }}" placeholder="username">
+      </div>
+      <div class="field">
+        <label for="f-action">Action</label>
+        <select id="f-action" name="action_filter">
+          <option value="">All actions</option>
+          {% for a in known_actions %}
+          <option value="{{ a }}" {% if filters.action_filter == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-from">Date from</label>
+        <input id="f-from" name="date_from" type="date" value="{{ filters.date_from }}">
+      </div>
+      <div class="field">
+        <label for="f-to">Date to</label>
+        <input id="f-to" name="date_to" type="date" value="{{ filters.date_to }}">
+      </div>
+      <button type="submit">Filter</button>
+      {% if filters.who or filters.action_filter or filters.date_from or filters.date_to %}
+      <a href="{{ url_for('admin_audit') }}" style="align-self:flex-end; font-size:0.88rem; padding-bottom:9px;">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="panel">
+    <p class="muted" style="margin:0 0 12px;">
+      {{ total_count }} entr{% if total_count != 1 %}ies{% else %}y{% endif %} —
+      page {{ page }} of {{ total_pages }}
+    </p>
+
+    {% if entries %}
+    <div style="overflow-x: auto;">
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who</th>
+            <th>Action</th>
+            <th>Clause ID</th>
+            <th>Field</th>
+            <th>Old Value</th>
+            <th>New Value</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td class="mono">{{ e.changed_at[:16].replace("T", " ") if e.changed_at else "—" }}</td>
+            <td>{{ e.changed_by or "—" }}</td>
+            <td>
+              <span class="action-pill {{ e.action | replace(' ', '_') }}">{{ e.action }}</span>
+            </td>
+            <td class="mono">{{ e.clause_id or "—" }}</td>
+            <td class="mono">{{ e.field_changed or "—" }}</td>
+            <td class="val">{{ e.old_value_display or "—" }}</td>
+            <td class="val">{{ e.new_value_display or "—" }}</td>
+            <td class="muted" style="font-size:0.84rem;">{{ e.notes or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination">
+      {% if prev_url %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="muted">&larr; Prev</span>{% endif %}
+      <span class="muted">{{ page }} / {{ total_pages }}</span>
+      {% if next_url %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="muted">Next &rarr;</span>{% endif %}
+    </div>
+
+    {% else %}
+    <p class="muted">No log entries match the current filters.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
