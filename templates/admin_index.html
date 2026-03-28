@@ -28,14 +28,37 @@
     <div class="help-section">
       <h3>Browse &amp; Filters</h3>
       <p>Filter clauses by keyword (searches clause_id, citation, document, summary, and full text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
+      <p>Clause cards show a <strong>⏳ Pending Approval</strong> badge if the clause is awaiting review. Pending clauses are not visible to residents until approved.</p>
+    </div>
+    <div class="help-section">
+      <h3>Approval Workflow</h3>
+      <p>Every clause change — add, edit, or delete — requires a second admin to approve before it takes effect in search results.</p>
+      <ul>
+        <li><strong>Submit for Approval</strong> — queues the change. The live clause is unchanged until approved.</li>
+        <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately. Use when no other admin is available.</li>
+        <li>Deletions always require a second superuser — self-approve is not available for delete.</li>
+        <li>The <strong>Pending (N)</strong> link in the header turns orange when items are waiting. Superusers review and approve or reject from that page.</li>
+      </ul>
+    </div>
+    <div class="help-section">
+      <h3>Source Verification</h3>
+      <p>When a clause is submitted for approval, the system automatically downloads the linked Google Drive PDF and checks whether the clause text appears on the stated page.</p>
+      <ul>
+        <li><strong>✅ Verified</strong> — strong text match found (≥ 80%)</li>
+        <li><strong>⚠️ Partial</strong> — partial match found (50–79%)</li>
+        <li><strong>❌ Not Found</strong> — text not found on that page (&lt; 50%)</li>
+        <li><strong>⏭ Skipped</strong> — PDF could not be accessed or clause text was missing</li>
+      </ul>
+      <p>Verification is <em>advisory only</em> — it informs the approver but never blocks submission or approval.</p>
+      <p>Three source fields are required on every clause: <strong>Citation</strong>, <strong>Page</strong>, and a <strong>Google Drive link</strong> (<code>https://drive.google.com/…</code>).</p>
     </div>
     <div class="help-section">
       <h3>Add Clause</h3>
-      <p>Manually insert a single new clause. At least one of <code>clause_text</code> or <code>plain_summary</code> is required. The embedding is <em>not</em> generated automatically — use <strong>Regenerate Embedding</strong> on the saved clause afterward.</p>
+      <p>Manually insert a single new clause. Citation, page, and a Google Drive source link are required. At least one of <code>clause_text</code> or <code>plain_summary</code> is required. The embedding is <em>not</em> generated automatically — use <strong>Regenerate Embedding</strong> on the approved clause afterward.</p>
     </div>
     <div class="help-section">
       <h3>Import CSV — Add</h3>
-      <p>Bulk-inserts clauses from a .csv file. Column rules:</p>
+      <p>Bulk-inserts clauses from a .csv file. Each row must include <code>citation</code>, <code>page</code>, and a Google Drive <code>link</code> — rows missing any of these are skipped. CSV imports go live immediately (no approval step). Column rules:</p>
       <ul>
         <li>At least one of <code>clause_text</code> or <code>plain_summary</code> must be non-empty per row</li>
         <li><code>page</code> and <code>precedence_level</code> must be whole numbers if provided</li>
@@ -47,21 +70,34 @@
     </div>
     <div class="help-section">
       <h3>Import CSV — Delete</h3>
-      <p>Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the file. <strong>There is no undo.</strong> The CSV must contain a <code>clause_id</code> column; all other columns are ignored. Rows with an empty <code>clause_id</code> are skipped.</p>
+      <p>Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the file. <strong>There is no undo.</strong> CSV bulk deletes go live immediately (no approval step). The CSV must contain a <code>clause_id</code> column; all other columns are ignored.</p>
     </div>
     <div class="help-section">
       <h3>Embeddings</h3>
       <p>Each clause has an embedding — a numeric vector used for semantic search by the HOA chatbot.</p>
       <ul>
-        <li>Editing <code>clause_text</code> or <code>plain_summary</code> nulls the embedding (marks it stale), because the old vector no longer reflects the new text.</li>
+        <li>Editing <code>clause_text</code> or <code>plain_summary</code> marks the embedding stale when the edit is approved and applied.</li>
         <li>Stale clauses are excluded from vector search results until regenerated.</li>
-        <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it.</li>
+        <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it. No approval required.</li>
         <li>Model in use: <code>{{ embedding_model }}</code></li>
       </ul>
     </div>
     <div class="help-section">
+      <h3>Audit Log</h3>
+      <p>Every action — clause adds, edits, deletes, approvals, rejections, user changes, and CSV imports — is recorded in the audit log. Accessible via the <strong>Audit Log</strong> link in the header (superusers only). Filter by user, action type, or date range.</p>
+    </div>
+    <div class="help-section">
+      <h3>User Management</h3>
+      <p>Accessible via the <strong>Users</strong> link in the header.</p>
+      <ul>
+        <li><strong>Superusers</strong> (tmasters, cmasters) — can add, deactivate, delete, and reset passwords for other users.</li>
+        <li><strong>All users</strong> — can change their own password from the Users page.</li>
+        <li>You cannot deactivate or delete your own account from the admin UI.</li>
+      </ul>
+    </div>
+    <div class="help-section">
       <h3>Search Test</h3>
-      <p>Runs a live query using the same embedding model and Supabase <code>match_clauses</code> RPC as the production chatbot. Use this to verify that a question surfaces the expected clauses before testing in the frontend.</p>
+      <p>Runs a live query using the same embedding model and Supabase <code>match_clauses</code> RPC as the production chatbot. Use this to verify that a question surfaces the expected clauses before testing in the frontend. Only approved clauses appear in results.</p>
     </div>
   </div>
 </details>
