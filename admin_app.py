@@ -123,6 +123,19 @@ def to_int_or_none(value):
         return None
 
 
+def _validate_source_fields(form) -> list[str]:
+    """Returns a list of error messages. Empty list means valid."""
+    errors = []
+    if not form.get("citation", "").strip():
+        errors.append("Citation is required.")
+    if not str(form.get("page", "")).strip():
+        errors.append("Page number is required.")
+    link = form.get("link", "").strip()
+    if not link or not link.startswith("https://drive.google.com/"):
+        errors.append("Source link is required — must be a Google Drive URL.")
+    return errors
+
+
 def get_filter_options() -> tuple[list[str], list[str]]:
     result = (
         supabase()
@@ -383,6 +396,12 @@ def admin_home():
 @app.post("/admin/clauses")
 @login_required
 def create_clause():
+    errors = _validate_source_fields(request.form)
+    if errors:
+        for msg in errors:
+            flash(msg, "error")
+        return redirect(url_for("admin_home"))
+
     payload = {
         "clause_id": request.form.get("clause_id", "").strip() or None,
         "document": request.form.get("document", "").strip() or None,
@@ -403,6 +422,7 @@ def create_clause():
         clause_id=payload.get("clause_id"),
         record_id=inserted_id,
         new_value=json.dumps({k: v for k, v in payload.items() if k != "embedding"}, default=str),
+        notes="source verified",
     )
     flash("Clause added. Embedding is marked stale until you regenerate it.", "success")
     return redirect(url_for("admin_home"))
@@ -411,6 +431,12 @@ def create_clause():
 @app.post("/admin/clauses/<clause_id>/update")
 @login_required
 def update_clause(clause_id: str):
+    errors = _validate_source_fields(request.form)
+    if errors:
+        for msg in errors:
+            flash(msg, "error")
+        return redirect(url_for("admin_home"))
+
     existing = fetch_clause(clause_id)
     if not existing:
         flash(f"Clause {clause_id} was not found.", "error")
@@ -442,6 +468,8 @@ def update_clause(clause_id: str):
     supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
 
     _log_clause_field_changes(clause_id, existing, payload)
+    log_audit_event(action="updated", clause_id=payload.get("clause_id") or existing.get("clause_id"),
+                    record_id=clause_id, notes="source verified")
 
     if text_changed:
         flash("Clause updated. Text changed, so the embedding was marked stale.", "success")
@@ -453,6 +481,10 @@ def update_clause(clause_id: str):
 @app.post("/admin/clauses/<clause_id>/update-json")
 @login_required
 def update_clause_json(clause_id: str):
+    errors = _validate_source_fields(request.form)
+    if errors:
+        return jsonify({"ok": False, "message": " ".join(errors)})
+
     existing = fetch_clause(clause_id)
     if not existing:
         return jsonify({"ok": False, "message": f"Clause {clause_id} not found."}), 404
@@ -483,6 +515,8 @@ def update_clause_json(clause_id: str):
     supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
 
     _log_clause_field_changes(clause_id, existing, payload)
+    log_audit_event(action="updated", clause_id=payload.get("clause_id") or existing.get("clause_id"),
+                    record_id=clause_id, notes="source verified")
 
     embedding_stale = text_changed or not existing.get("embedding")
     message = "Saved. Text changed — embedding is now stale." if text_changed else "Metadata saved."
@@ -598,6 +632,7 @@ def import_clauses():
 
     rows_ok = []
     row_errors = []
+    source_skip_count = 0
 
     for i, row in enumerate(reader, start=2):
         errors = []
@@ -627,6 +662,25 @@ def import_clauses():
         if not clause_text and not plain_summary:
             errors.append("at least one of 'clause_text' or 'plain_summary' must be non-empty")
 
+        # Source field validation
+        missing_source = []
+        if not (row.get("citation") or "").strip():
+            missing_source.append("citation")
+        if not page_raw:
+            missing_source.append("page")
+        link_val = (row.get("link") or "").strip()
+        if not link_val or not link_val.startswith("https://drive.google.com/"):
+            missing_source.append("link")
+        if missing_source:
+            source_skip_count += 1
+            missing_str = ", ".join(missing_source)
+            row_errors.append(f"Row {i}: skipped — missing source fields: {missing_str}")
+            log_audit_event(
+                action="csv_import_skipped",
+                notes=f"row {i}: missing {missing_str}",
+            )
+            continue
+
         if errors:
             row_errors.append(f"Row {i}: {'; '.join(errors)}")
             continue
@@ -638,7 +692,7 @@ def import_clauses():
             "citation": (row.get("citation") or "").strip() or None,
             "clause_text": clause_text or None,
             "plain_summary": plain_summary or None,
-            "link": (row.get("link") or "").strip() or None,
+            "link": link_val or None,
             "tags": parse_tags(row.get("tags") or ""),
             "precedence_level": precedence_level,
             "match_source": (row.get("match_source") or "").strip() or "CSV Import",
@@ -647,6 +701,13 @@ def import_clauses():
 
     for err in row_errors:
         flash(err, "error")
+
+    if source_skip_count:
+        flash(
+            f"{source_skip_count} row{'s' if source_skip_count != 1 else ''} skipped — "
+            "missing citation, page, or source link.",
+            "error",
+        )
 
     if rows_ok:
         supabase().from_("clauses").insert(rows_ok).execute()
@@ -660,7 +721,7 @@ def import_clauses():
             "Embeddings are stale — regenerate as needed.",
             "success",
         )
-    elif not row_errors:
+    elif not row_errors and not source_skip_count:
         flash("CSV had no data rows.", "error")
 
     return redirect(url_for("admin_home"))

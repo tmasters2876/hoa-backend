@@ -1,6 +1,25 @@
 {% extends "admin_base.html" %}
 
 {% block content %}
+<style>
+  .req { color: var(--danger); margin-left: 2px; }
+  .field-help { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+  .btn-view-source {
+    display: inline-block;
+    font-size: 0.78rem; font-weight: 700; white-space: nowrap;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(11,110,79,0.10); color: var(--accent);
+    text-decoration: none; border: 1px solid rgba(11,110,79,0.25);
+    line-height: 1.4;
+  }
+  .btn-view-source:hover { background: rgba(11,110,79,0.18); }
+  .badge-no-source {
+    display: inline-block;
+    font-size: 0.76rem; font-weight: 700; white-space: nowrap;
+    padding: 3px 9px; border-radius: 999px;
+    background: rgba(209,123,15,0.13); color: #7f4b09;
+  }
+</style>
 
 {# ── Help Panel ── #}
 <details class="panel help-panel">
@@ -96,12 +115,12 @@
           <input id="new_document" name="document" placeholder="Declaration">
         </div>
         <div>
-          <label for="new_page">Page</label>
-          <input id="new_page" name="page" type="number" min="1">
+          <label for="new_page">Page<span class="req">*</span></label>
+          <input id="new_page" name="page" type="number" min="1" required>
         </div>
         <div>
-          <label for="new_citation">Citation</label>
-          <input id="new_citation" name="citation" placeholder="Art. VI, Sec. 3">
+          <label for="new_citation">Citation<span class="req">*</span></label>
+          <input id="new_citation" name="citation" placeholder="Art. VI, Sec. 3" required>
         </div>
         <div>
           <label for="new_tags">Tags</label>
@@ -112,8 +131,9 @@
           <input id="new_precedence" name="precedence_level" type="number" min="0">
         </div>
         <div>
-          <label for="new_link">Link</label>
-          <input id="new_link" name="link" placeholder="https://...">
+          <label for="new_link">Link<span class="req">*</span></label>
+          <input id="new_link" name="link" placeholder="https://drive.google.com/file/d/…" required>
+          <div class="field-help">Must be a Google Drive link</div>
         </div>
         <div>
           <label for="new_summary">Plain Summary</label>
@@ -225,7 +245,14 @@
                   {% endfor %}
                 </div>
               </div>
-              <div class="clause-meta" style="white-space:nowrap; font-size:0.78rem; opacity:0.6;">{{ clause.id[:8] }}…</div>
+              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
+                <span class="clause-meta" style="white-space:nowrap; font-size:0.78rem; opacity:0.6;">{{ clause.id[:8] }}…</span>
+                {% if clause.link %}
+                  <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
+                {% else %}
+                  <span class="badge-no-source">⚠ No Source</span>
+                {% endif %}
+              </div>
             </div>
 
             {# Expandable edit area #}
@@ -246,8 +273,8 @@
                       <input name="document" value="{{ clause.document or '' }}">
                     </div>
                     <div>
-                      <label>Page</label>
-                      <input name="page" type="number" min="1" value="{{ clause.page or '' }}">
+                      <label>Page<span class="req">*</span></label>
+                      <input name="page" type="number" min="1" value="{{ clause.page or '' }}" required>
                     </div>
                     <div>
                       <label>Precedence</label>
@@ -255,12 +282,13 @@
                     </div>
                   </div>
                   <div>
-                    <label>Citation</label>
-                    <input name="citation" value="{{ clause.citation or '' }}">
+                    <label>Citation<span class="req">*</span></label>
+                    <input name="citation" value="{{ clause.citation or '' }}" required>
                   </div>
                   <div>
-                    <label>Link</label>
-                    <input name="link" value="{{ clause.link or '' }}">
+                    <label>Link<span class="req">*</span></label>
+                    <input name="link" value="{{ clause.link or '' }}" placeholder="https://drive.google.com/file/d/…" required>
+                    <div class="field-help">Must be a Google Drive link</div>
                   </div>
                   <div>
                     <label>Tags</label>
