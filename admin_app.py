@@ -1,7 +1,6 @@
 import csv
 import functools
 import io
-import json
 import math
 import os
 from datetime import timedelta
@@ -40,10 +39,11 @@ IMPORTABLE_COLUMNS = set(TEMPLATE_HEADERS)
 
 CLAUSE_COLUMNS = (
     "id,clause_id,document,page,citation,clause_text,plain_summary,link,"
-    "embedding,match_source,tags,created_at,precedence_level"
+    "embedding,match_source,tags,created_at,precedence_level,status"
 )
 PAGE_SIZE = 25
 AUDIT_PAGE_SIZE = 50
+PENDING_PAGE_SIZE = 25
 
 SUPERUSERS = {'tmasters', 'cmasters'}
 
@@ -250,7 +250,23 @@ def index_redirect():
 
 @app.context_processor
 def inject_superuser():
-    return {"is_superuser": session.get("username") in SUPERUSERS}
+    pending_count = 0
+    if session.get("logged_in"):
+        try:
+            r = (
+                supabase()
+                .from_("pending_changes")
+                .select("id", count="exact")
+                .eq("status", "pending")
+                .execute()
+            )
+            pending_count = r.count or 0
+        except Exception:
+            pass
+    return {
+        "is_superuser": session.get("username") in SUPERUSERS,
+        "pending_count": pending_count,
+    }
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
@@ -295,6 +311,39 @@ def _log_clause_field_changes(record_id, existing, new_payload):
                 old_value=old_str or None,
                 new_value=new_str or None,
             )
+
+
+def submit_pending_change(clause_uuid, action: str, proposed_changes=None, original_values=None) -> str | None:
+    """Insert a pending_changes row and return its id, or None on failure."""
+    try:
+        result = supabase().from_("pending_changes").insert({
+            "clause_id": str(clause_uuid) if clause_uuid is not None else None,
+            "submitted_by": session.get("username"),
+            "action": action,
+            "proposed_changes": proposed_changes,
+            "original_values": original_values,
+            "status": "pending",
+        }).execute()
+        rows = result.data or []
+        return rows[0].get("id") if rows else None
+    except Exception as e:
+        print(f"[pending] WARNING: failed to write pending_changes: {e}")
+        return None
+
+
+def _apply_pending_change(change: dict):
+    """Apply an approved pending change to the clauses table."""
+    clause_uuid = change.get("clause_id")
+    action = change.get("action")
+    proposed = change.get("proposed_changes") or {}
+    if action == "create":
+        supabase().from_("clauses").update({"status": "approved"}).eq("id", clause_uuid).execute()
+    elif action == "edit":
+        payload = {k: v for k, v in proposed.items()}
+        payload["status"] = "approved"
+        supabase().from_("clauses").update(payload).eq("id", clause_uuid).execute()
+    elif action == "delete":
+        supabase().from_("clauses").delete().eq("id", clause_uuid).execute()
 
 
 # ── Auth routes ───────────────────────────────────────────────────────────────
@@ -402,6 +451,8 @@ def create_clause():
             flash(msg, "error")
         return redirect(url_for("admin_home"))
 
+    self_approve = bool(request.form.get("self_approve")) and session.get("username") in SUPERUSERS
+
     payload = {
         "clause_id": request.form.get("clause_id", "").strip() or None,
         "document": request.form.get("document", "").strip() or None,
@@ -414,17 +465,28 @@ def create_clause():
         "precedence_level": to_int_or_none(request.form.get("precedence_level")),
         "match_source": "Admin Added",
         "embedding": None,
+        "status": "approved" if self_approve else "pending",
     }
     result = supabase().from_("clauses").insert(payload).execute()
     inserted_id = (result.data or [{}])[0].get("id")
+
+    proposed_for_log = {k: v for k, v in payload.items() if k not in ("embedding", "status")}
+    submit_pending_change(
+        clause_uuid=inserted_id,
+        action="create",
+        proposed_changes=proposed_for_log,
+        original_values=None,
+    )
     log_audit_event(
-        action="created",
+        action="change_submitted",
         clause_id=payload.get("clause_id"),
         record_id=inserted_id,
-        new_value=json.dumps({k: v for k, v in payload.items() if k != "embedding"}, default=str),
-        notes="source verified",
+        notes="create" + (" (self-approved)" if self_approve else ""),
     )
-    flash("Clause added. Embedding is marked stale until you regenerate it.", "success")
+    if self_approve:
+        flash("Clause added and self-approved. Embedding is marked stale until you regenerate it.", "success")
+    else:
+        flash("Clause submitted for approval — a second admin must approve it before it appears in search.", "success")
     return redirect(url_for("admin_home"))
 
 
@@ -442,6 +504,8 @@ def update_clause(clause_id: str):
         flash(f"Clause {clause_id} was not found.", "error")
         return redirect(url_for("admin_home"))
 
+    self_approve = bool(request.form.get("self_approve")) and session.get("username") in SUPERUSERS
+
     new_clause_text = request.form.get("clause_text", "").strip()
     new_plain_summary = request.form.get("plain_summary", "").strip()
     text_changed = (
@@ -460,21 +524,28 @@ def update_clause(clause_id: str):
         "tags": parse_tags(request.form.get("tags", "")),
         "precedence_level": to_int_or_none(request.form.get("precedence_level")),
     }
-
     if text_changed:
         payload["embedding"] = None
         payload["match_source"] = "Admin Edited (Embedding Stale)"
 
-    supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+    original_for_log = {k: existing.get(k) for k in payload}
 
-    _log_clause_field_changes(clause_id, existing, payload)
-    log_audit_event(action="updated", clause_id=payload.get("clause_id") or existing.get("clause_id"),
-                    record_id=clause_id, notes="source verified")
-
-    if text_changed:
-        flash("Clause updated. Text changed, so the embedding was marked stale.", "success")
+    if self_approve:
+        supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+        _log_clause_field_changes(clause_id, existing, payload)
+        log_audit_event(action="change_approved", clause_id=payload.get("clause_id") or existing.get("clause_id"),
+                        record_id=clause_id, notes="edit self-approved")
+        flash("Edit self-approved and applied." + (" Embedding marked stale." if text_changed else ""), "success")
     else:
-        flash("Clause metadata updated.", "success")
+        submit_pending_change(
+            clause_uuid=clause_id,
+            action="edit",
+            proposed_changes=payload,
+            original_values=original_for_log,
+        )
+        log_audit_event(action="change_submitted", clause_id=payload.get("clause_id") or existing.get("clause_id"),
+                        record_id=clause_id, notes="edit")
+        flash("Edit submitted for approval — the live clause is unchanged until a second admin approves.", "success")
     return redirect(url_for("admin_home"))
 
 
@@ -489,6 +560,8 @@ def update_clause_json(clause_id: str):
     if not existing:
         return jsonify({"ok": False, "message": f"Clause {clause_id} not found."}), 404
 
+    self_approve = bool(request.form.get("self_approve")) and session.get("username") in SUPERUSERS
+
     new_clause_text = request.form.get("clause_text", "").strip()
     new_plain_summary = request.form.get("plain_summary", "").strip()
     text_changed = (
@@ -507,34 +580,52 @@ def update_clause_json(clause_id: str):
         "tags": parse_tags(request.form.get("tags", "")),
         "precedence_level": to_int_or_none(request.form.get("precedence_level")),
     }
-
     if text_changed:
         payload["embedding"] = None
         payload["match_source"] = "Admin Edited (Embedding Stale)"
 
-    supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+    original_for_log = {k: existing.get(k) for k in payload}
 
-    _log_clause_field_changes(clause_id, existing, payload)
-    log_audit_event(action="updated", clause_id=payload.get("clause_id") or existing.get("clause_id"),
-                    record_id=clause_id, notes="source verified")
-
-    embedding_stale = text_changed or not existing.get("embedding")
-    message = "Saved. Text changed — embedding is now stale." if text_changed else "Metadata saved."
-    return jsonify({"ok": True, "message": message, "embedding_stale": embedding_stale})
+    if self_approve:
+        supabase().from_("clauses").update(payload).eq("id", clause_id).execute()
+        _log_clause_field_changes(clause_id, existing, payload)
+        log_audit_event(action="change_approved", clause_id=payload.get("clause_id") or existing.get("clause_id"),
+                        record_id=clause_id, notes="edit self-approved")
+        embedding_stale = text_changed or not existing.get("embedding")
+        msg = "⚠ Self-approved and applied." + (" Embedding now stale." if text_changed else "")
+        return jsonify({"ok": True, "message": msg, "embedding_stale": embedding_stale, "pending": False})
+    else:
+        submit_pending_change(
+            clause_uuid=clause_id,
+            action="edit",
+            proposed_changes=payload,
+            original_values=original_for_log,
+        )
+        log_audit_event(action="change_submitted", clause_id=payload.get("clause_id") or existing.get("clause_id"),
+                        record_id=clause_id, notes="edit")
+        return jsonify({"ok": True, "message": "Edit submitted for approval.", "embedding_stale": False, "pending": True})
 
 
 @app.post("/admin/clauses/<clause_id>/delete")
 @login_required
 def delete_clause(clause_id: str):
     existing = fetch_clause(clause_id)
-    supabase().from_("clauses").delete().eq("id", clause_id).execute()
-    log_audit_event(
-        action="deleted",
-        clause_id=existing.get("clause_id") if existing else None,
-        record_id=clause_id,
-        old_value=(existing.get("clause_text") or "")[:2000] if existing else None,
+    if not existing:
+        flash(f"Clause {clause_id} was not found.", "error")
+        return redirect(url_for("admin_home"))
+    submit_pending_change(
+        clause_uuid=clause_id,
+        action="delete",
+        proposed_changes=None,
+        original_values={k: existing.get(k) for k in _CLAUSE_TRACKED_FIELDS},
     )
-    flash(f"Deleted clause {clause_id}.", "success")
+    log_audit_event(
+        action="change_submitted",
+        clause_id=existing.get("clause_id"),
+        record_id=clause_id,
+        notes="delete",
+    )
+    flash("Deletion submitted for approval — a second superuser must approve before the clause is removed.", "success")
     return redirect(url_for("admin_home"))
 
 
@@ -1008,6 +1099,7 @@ def admin_audit():
         "created", "updated", "deleted", "embedding_regenerated",
         "csv_import", "csv_bulk_delete",
         "user_added", "user_activated", "user_deactivated", "user_deleted", "password_reset",
+        "change_submitted", "change_approved", "change_rejected",
     ]
 
     return render_template(
@@ -1063,6 +1155,149 @@ def change_own_password():
     password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
     supabase().from_("admin_users").update({"password_hash": password_hash}).eq("id", user_id).execute()
     return jsonify({"ok": True, "message": "Password changed successfully."})
+
+
+# ── Pending changes routes ─────────────────────────────────────────────────────
+
+@app.get("/admin/pending")
+@superuser_required
+def admin_pending():
+    action_filter = request.args.get("action_filter", "").strip()
+    who_filter = request.args.get("who", "").strip()
+    page = max(1, to_int_or_none(request.args.get("page")) or 1)
+
+    query = supabase().from_("pending_changes").select("*", count="exact").eq("status", "pending")
+    if action_filter:
+        query = query.eq("action", action_filter)
+    if who_filter:
+        query = query.eq("submitted_by", who_filter)
+
+    start = (page - 1) * PENDING_PAGE_SIZE
+    end = start + PENDING_PAGE_SIZE - 1
+    result = query.order("submitted_at", desc=False).range(start, end).execute()
+
+    entries = result.data or []
+    total_count = result.count or 0
+    total_pages = max(1, math.ceil(total_count / PENDING_PAGE_SIZE))
+
+    # For each entry fetch the current live clause so we can show context
+    for entry in entries:
+        clause_uuid = entry.get("clause_id")
+        entry["current_clause"] = fetch_clause(clause_uuid) if clause_uuid else None
+
+    pending_filters = {"action_filter": action_filter, "who": who_filter}
+    query_args = {k: v for k, v in pending_filters.items() if v}
+
+    prev_url = None
+    next_url = None
+    if page > 1:
+        prev_url = url_for("admin_pending") + "?" + urlencode({**query_args, "page": page - 1})
+    if page < total_pages:
+        next_url = url_for("admin_pending") + "?" + urlencode({**query_args, "page": page + 1})
+
+    return render_template(
+        "admin_pending.html",
+        entries=entries,
+        total_count=total_count,
+        total_pages=total_pages,
+        page=page,
+        prev_url=prev_url,
+        next_url=next_url,
+        filters=pending_filters,
+        current_username=session.get("username"),
+    )
+
+
+@app.post("/admin/pending/<change_id>/approve")
+@superuser_required
+def approve_pending(change_id: str):
+    result = (
+        supabase()
+        .from_("pending_changes")
+        .select("*")
+        .eq("id", change_id)
+        .eq("status", "pending")
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("Pending change not found or already processed.", "error")
+        return redirect(url_for("admin_pending"))
+
+    change = rows[0]
+    reviewer = session.get("username")
+    is_self = change["submitted_by"] == reviewer
+
+    if is_self and change["action"] == "delete":
+        flash("Deletions cannot be self-approved — a different superuser must approve.", "error")
+        return redirect(url_for("admin_pending"))
+
+    _apply_pending_change(change)
+
+    from datetime import datetime, timezone
+    supabase().from_("pending_changes").update({
+        "status": "approved",
+        "reviewed_by": reviewer,
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", change_id).execute()
+
+    clause_id_text = (change.get("proposed_changes") or {}).get("clause_id") or None
+    notes = "self-approved" if is_self else None
+    log_audit_event(
+        action="change_approved",
+        clause_id=clause_id_text,
+        record_id=change.get("clause_id"),
+        notes=notes,
+    )
+    flash("Change approved and applied." + (" (self-approved)" if is_self else ""), "success")
+    return redirect(url_for("admin_pending"))
+
+
+@app.post("/admin/pending/<change_id>/reject")
+@superuser_required
+def reject_pending(change_id: str):
+    review_notes = request.form.get("review_notes", "").strip()
+    if not review_notes:
+        flash("A rejection reason is required.", "error")
+        return redirect(url_for("admin_pending"))
+
+    result = (
+        supabase()
+        .from_("pending_changes")
+        .select("*")
+        .eq("id", change_id)
+        .eq("status", "pending")
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("Pending change not found or already processed.", "error")
+        return redirect(url_for("admin_pending"))
+
+    change = rows[0]
+
+    if change["action"] == "create":
+        supabase().from_("clauses").delete().eq("id", change["clause_id"]).execute()
+
+    from datetime import datetime, timezone
+    supabase().from_("pending_changes").update({
+        "status": "rejected",
+        "reviewed_by": session.get("username"),
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "review_notes": review_notes,
+    }).eq("id", change_id).execute()
+
+    clause_id_text = (change.get("proposed_changes") or {}).get("clause_id") or None
+    log_audit_event(
+        action="change_rejected",
+        clause_id=clause_id_text,
+        record_id=change.get("clause_id"),
+        notes=review_notes,
+    )
+    flash("Change rejected.", "success")
+    return redirect(url_for("admin_pending"))
 
 
 if __name__ == "__main__":

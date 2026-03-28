@@ -430,6 +430,11 @@
             <a href="{{ url_for('admin_users') }}" style="font-size:0.88rem; font-weight:700; white-space:nowrap;">Users</a>
             {% if is_superuser %}
             <a href="{{ url_for('admin_audit') }}" style="font-size:0.88rem; font-weight:700; white-space:nowrap;">Audit Log</a>
+            <a href="{{ url_for('admin_pending') }}"
+               style="font-size:0.88rem; font-weight:700; white-space:nowrap;
+                      {% if pending_count > 0 %}color:var(--accent-2);{% endif %}">
+              Pending{% if pending_count > 0 %} ({{ pending_count }}){% endif %}
+            </a>
             {% endif %}
             <form method="post" action="{{ url_for('logout') }}">
               <button class="secondary logout-btn" type="submit">Log out</button>

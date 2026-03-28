@@ -143,7 +143,14 @@
           <label for="new_text">Clause Text</label>
           <textarea id="new_text" name="clause_text"></textarea>
         </div>
-        <button type="submit">Add Clause</button>
+        {% if is_superuser %}
+        <div class="button-row">
+          <button type="submit" name="self_approve" value="">Submit for Approval</button>
+          <button type="submit" name="self_approve" value="1" class="warn">⚠ Self-approve</button>
+        </div>
+        {% else %}
+        <button type="submit" name="self_approve" value="">Submit for Approval</button>
+        {% endif %}
       </form>
     </details>
 
@@ -247,6 +254,9 @@
               </div>
               <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
                 <span class="clause-meta" style="white-space:nowrap; font-size:0.78rem; opacity:0.6;">{{ clause.id[:8] }}…</span>
+                {% if clause.status == 'pending' %}
+                  <span class="pill stale" style="font-size:0.76rem;">⏳ Pending Approval</span>
+                {% endif %}
                 {% if clause.link %}
                   <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
                 {% else %}
@@ -303,7 +313,10 @@
                     <textarea name="clause_text">{{ clause.clause_text or '' }}</textarea>
                   </div>
                   <div class="button-row" style="align-items:center;">
-                    <button type="submit" style="flex:0 0 auto;">Save Clause</button>
+                    <button type="submit" name="self_approve" value="" style="flex:0 0 auto;">Submit for Approval</button>
+                    {% if is_superuser %}
+                    <button type="submit" name="self_approve" value="1" class="warn" style="flex:0 0 auto;">⚠ Self-approve</button>
+                    {% endif %}
                     <div class="inline-feedback"></div>
                   </div>
                 </form>
@@ -313,7 +326,7 @@
                     <button class="warn" type="submit">Regenerate Embedding</button>
                   </form>
                   <form method="post" action="{{ url_for('delete_clause', clause_id=clause.id) }}"
-                        onsubmit="return confirm('Permanently delete this clause?\n\nThis cannot be undone.');">
+                        onsubmit="return confirm('Submit this clause for deletion?\n\nA second superuser must approve before it is removed.');">
                     <button class="danger" type="submit">Delete Clause</button>
                   </form>
                 </div>

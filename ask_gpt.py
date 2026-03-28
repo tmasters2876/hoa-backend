@@ -197,7 +197,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         "query_embedding": query_embedding,
         "match_threshold": 0.6,
         "match_count": 10
-    }).execute()
+    }).eq("status", "approved").execute()
 
     vector_matches = response.data or []
     for clause in vector_matches:
@@ -224,6 +224,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             supabase
             .from_("clauses")
             .select("*")
+            .eq("status", "approved")
             .or_(or_filter)
         )
         if tags:
@@ -244,14 +245,14 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
             merged = []
             for k in set(keywords):
                 like_k = f"%{k}%"
-                q1 = supabase.from_("clauses").select("*").ilike("plain_summary", like_k)
-                q2 = supabase.from_("clauses").select("*").ilike("clause_text", like_k)
+                q1 = supabase.from_("clauses").select("*").eq("status", "approved").ilike("plain_summary", like_k)
+                q2 = supabase.from_("clauses").select("*").eq("status", "approved").ilike("clause_text", like_k)
                 chunks.append(q1.limit(10).execute().data or [])
                 chunks.append(q2.limit(10).execute().data or [])
         else:
             like = f"%{question}%"
-            q1 = supabase.from_("clauses").select("*").ilike("plain_summary", like)
-            q2 = supabase.from_("clauses").select("*").ilike("clause_text", like)
+            q1 = supabase.from_("clauses").select("*").eq("status", "approved").ilike("plain_summary", like)
+            q2 = supabase.from_("clauses").select("*").eq("status", "approved").ilike("clause_text", like)
             chunks.append(q1.limit(10).execute().data or [])
             chunks.append(q2.limit(10).execute().data or [])
 
@@ -294,7 +295,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
 # =========================
 def fetch_soft_fallback_clauses():
     general_tags = ["rental", "lease","shed","driveway", "fence","guest house","park", "parking", "tenant"]
-    query = supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)
+    query = supabase.from_("clauses").select("*").eq("status", "approved").contains("tags", general_tags).limit(5)
     result = query.execute()
     fallback_data = result.data or []
     for clause in fallback_data:
