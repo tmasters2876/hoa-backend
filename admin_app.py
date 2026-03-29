@@ -299,7 +299,7 @@ def log_user_activity(username: str, action: str):
         supabase().from_("user_activity_log").insert({
             "username": username,
             "action": action,
-            "ip_address": request.remote_addr,
+            "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip(),
             "user_agent": request.user_agent.string,
         }).execute()
     except Exception as e:
