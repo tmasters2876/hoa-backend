@@ -105,6 +105,9 @@
                 {% if user.id == current_user_id %}
                   <span class="pill" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;">you</span>
                 {% endif %}
+                {% if user.must_change_password %}
+                  <span class="pill stale" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;" title="Has not logged in yet — temp password still active">Temp Password</span>
+                {% endif %}
               </td>
               <td>
                 {% if user.is_active %}

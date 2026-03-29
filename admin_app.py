@@ -58,7 +58,7 @@ def lookup_and_verify_user(username: str, password: str) -> dict | None:
     result = (
         supabase()
         .from_("admin_users")
-        .select("id,username,password_hash,is_active")
+        .select("id,username,password_hash,is_active,must_change_password")
         .eq("username", username.lower())
         .limit(1)
         .execute()
@@ -82,6 +82,12 @@ def login_required(f):
     def wrapper(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        if session.get("must_change_password"):
+            # Allow only the change-password page and logout
+            allowed = {url_for("force_change_password"), url_for("force_change_password_post"), url_for("logout")}
+            if request.path not in allowed:
+                flash("Please set your password before continuing.", "error")
+                return redirect(url_for("force_change_password"))
         return f(*args, **kwargs)
     return wrapper
 
@@ -432,6 +438,10 @@ def login_post():
         session["logged_in"] = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
+        if user.get("must_change_password"):
+            session["must_change_password"] = True
+            flash("Welcome! Please set your own password before continuing.", "success")
+            return redirect(url_for("force_change_password"))
         return redirect(url_for("admin_home"))
     flash("Invalid username or password.", "error")
     return render_template("admin_login.html"), 401
@@ -441,6 +451,69 @@ def login_post():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.get("/admin/change-password")
+def force_change_password():
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+    if not session.get("must_change_password"):
+        return redirect(url_for("admin_home"))
+    return render_template("admin_change_password.html")
+
+
+@app.post("/admin/change-password")
+def force_change_password_post():
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+    if not session.get("must_change_password"):
+        return redirect(url_for("admin_home"))
+
+    user_id = session.get("user_id")
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not new_password or not confirm_password:
+        flash("Both password fields are required.", "error")
+        return render_template("admin_change_password.html"), 400
+    if len(new_password) < 8:
+        flash("Password must be at least 8 characters.", "error")
+        return render_template("admin_change_password.html"), 400
+    if new_password != confirm_password:
+        flash("Passwords do not match.", "error")
+        return render_template("admin_change_password.html"), 400
+
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("password_hash,username")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("User not found.", "error")
+        return render_template("admin_change_password.html"), 400
+
+    stored_hash = rows[0]["password_hash"]
+    try:
+        if bcrypt.checkpw(new_password.encode(), stored_hash.encode()):
+            flash("New password cannot be the same as your temporary password.", "error")
+            return render_template("admin_change_password.html"), 400
+    except Exception:
+        pass
+
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    supabase().from_("admin_users").update({
+        "password_hash": password_hash,
+        "must_change_password": False,
+    }).eq("id", user_id).execute()
+
+    log_audit_event(action="password_changed_first_login", new_value=rows[0]["username"])
+    session.pop("must_change_password", None)
+    flash("Password updated successfully. Welcome!", "success")
+    return redirect(url_for("admin_home"))
 
 
 # ── Public routes ─────────────────────────────────────────────────────────────
@@ -1011,7 +1084,7 @@ def admin_users():
     result = (
         supabase()
         .from_("admin_users")
-        .select("id,username,is_active,created_at")
+        .select("id,username,is_active,created_at,must_change_password")
         .order("created_at")
         .execute()
     )
@@ -1036,6 +1109,7 @@ def create_user():
         supabase().from_("admin_users").insert({
             "username": username,
             "password_hash": password_hash,
+            "must_change_password": True,
         }).execute()
         log_audit_event(action="user_added", new_value=username)
         flash(f"User '{username}' created.", "success")
@@ -1125,9 +1199,12 @@ def reset_user_password(user_id: str):
     target = supabase().from_("admin_users").select("username").eq("id", user_id).limit(1).execute()
     target_username = (target.data or [{}])[0].get("username")
     password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
-    supabase().from_("admin_users").update({"password_hash": password_hash}).eq("id", user_id).execute()
+    supabase().from_("admin_users").update({
+        "password_hash": password_hash,
+        "must_change_password": True,
+    }).eq("id", user_id).execute()
     log_audit_event(action="password_reset", new_value=target_username)
-    return jsonify({"ok": True, "message": "Password reset successfully."})
+    return jsonify({"ok": True, "message": "Password reset successfully. User will be prompted to set a new password on next login."})
 
 
 @app.get("/admin/audit")
