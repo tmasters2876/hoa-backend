@@ -5,6 +5,7 @@ import math
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 
 import bcrypt
@@ -26,6 +27,16 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = os.environ["SECRET_KEY"]
 app.permanent_session_lifetime = timedelta(hours=8)
+
+
+@app.template_filter('central_time')
+def central_time_filter(utc_dt):
+    if not utc_dt:
+        return ''
+    if isinstance(utc_dt, str):
+        utc_dt = datetime.fromisoformat(utc_dt)
+    central = utc_dt.astimezone(ZoneInfo('America/Chicago'))
+    return central.strftime('%Y-%m-%d %-I:%M %p')
 
 
 @app.after_request
@@ -1137,7 +1148,7 @@ def admin_users():
             if uname not in seen:
                 seen.add(uname)
                 ts = row["occurred_at"] or ""
-                last_logins[uname] = ts[:10] if ts else ""
+                last_logins[uname] = ts
     except Exception as e:
         print(f"[activity] WARNING: failed to fetch last logins: {e}")
 
