@@ -94,6 +94,7 @@
             <th>Username</th>
             <th>Status</th>
             <th>Created</th>
+            <th>Last Login</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -117,6 +118,7 @@
                 {% endif %}
               </td>
               <td class="clause-meta">{{ user.created_at[:10] if user.created_at else '—' }}</td>
+              <td class="clause-meta">{{ last_logins.get(user.username) or 'Never' }}</td>
               <td>
                 {% if user.id != current_user_id and is_superuser %}
                   <div class="button-row" style="gap: 6px;">
@@ -157,11 +159,64 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="4" class="muted">No users found.</td></tr>
+            <tr><td colspan="5" class="muted">No users found.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+
+    {% if is_superuser %}
+    <div class="panel">
+      <h2>Recent Activity</h2>
+      {% if activity_log %}
+      <table class="result-table" style="margin-top: 10px;">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who</th>
+            <th>Action</th>
+            <th>IP Address</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in activity_log %}
+          <tr>
+            <td class="clause-meta">{{ entry.occurred_at[:16].replace('T', ' ') if entry.occurred_at else '—' }}</td>
+            <td>{{ entry.username or '—' }}</td>
+            <td>
+              {% if entry.action == 'login_success' %}
+                <span class="pill ok" style="font-size:0.8rem;">login_success</span>
+              {% elif entry.action == 'login_failed' %}
+                <span class="pill" style="font-size:0.8rem; background:rgba(161,45,47,0.15); color:#a12d2f;">login_failed</span>
+              {% elif entry.action == 'logout' %}
+                <span class="pill" style="font-size:0.8rem; background:#e8e8e8; color:#58656d;">logout</span>
+              {% elif entry.action == 'session_expired' %}
+                <span class="pill stale" style="font-size:0.8rem;">session_expired</span>
+              {% else %}
+                <span class="pill" style="font-size:0.8rem;">{{ entry.action }}</span>
+              {% endif %}
+            </td>
+            <td class="clause-meta">{{ entry.ip_address or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if activity_total_pages > 1 %}
+      <div class="button-row" style="margin-top: 14px; gap: 8px; justify-content: flex-end;">
+        {% if activity_page > 1 %}
+          <a href="{{ url_for('admin_users') }}?activity_page={{ activity_page - 1 }}" style="font-size:0.88rem;">← Newer</a>
+        {% endif %}
+        <span class="muted" style="font-size:0.88rem; align-self:center;">Page {{ activity_page }} of {{ activity_total_pages }}</span>
+        {% if activity_page < activity_total_pages %}
+          <a href="{{ url_for('admin_users') }}?activity_page={{ activity_page + 1 }}" style="font-size:0.88rem;">Older →</a>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="muted" style="margin-top:10px;">No activity recorded yet.</p>
+      {% endif %}
+    </div>
+    {% endif %}
 
   </section>
 </section>

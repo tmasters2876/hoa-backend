@@ -48,6 +48,7 @@ CLAUSE_COLUMNS = (
 PAGE_SIZE = 25
 AUDIT_PAGE_SIZE = 50
 PENDING_PAGE_SIZE = 25
+ACTIVITY_PAGE_SIZE = 25
 
 SUPERUSERS = {'tmasters', 'cmasters'}
 
@@ -82,6 +83,18 @@ def login_required(f):
     def wrapper(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        # Enforce 8-hour session limit server-side and log expiry
+        logged_in_at = session.get("logged_in_at")
+        if logged_in_at:
+            try:
+                age = datetime.now(timezone.utc) - datetime.fromisoformat(logged_in_at)
+                if age > app.permanent_session_lifetime:
+                    log_user_activity(session.get("username"), "session_expired")
+                    session.clear()
+                    flash("Your session has expired. Please sign in again.", "error")
+                    return redirect(url_for("login"))
+            except Exception:
+                pass
         if session.get("must_change_password"):
             # Allow only the change-password page and logout
             allowed = {url_for("force_change_password"), url_for("force_change_password_post"), url_for("logout")}
@@ -281,6 +294,18 @@ def inject_superuser():
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
+def log_user_activity(username: str, action: str):
+    try:
+        supabase().from_("user_activity_log").insert({
+            "username": username,
+            "action": action,
+            "ip_address": request.remote_addr,
+            "user_agent": request.user_agent.string,
+        }).execute()
+    except Exception as e:
+        print(f"[activity] WARNING: failed to write activity log: {e}")
+
+
 def log_audit_event(action, clause_id=None, record_id=None,
                     field_changed=None, old_value=None, new_value=None, notes=None):
     try:
@@ -438,17 +463,21 @@ def login_post():
         session["logged_in"] = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
+        session["logged_in_at"] = datetime.now(timezone.utc).isoformat()
+        log_user_activity(user["username"], "login_success")
         if user.get("must_change_password"):
             session["must_change_password"] = True
             flash("Welcome! Please set your own password before continuing.", "success")
             return redirect(url_for("force_change_password"))
         return redirect(url_for("admin_home"))
+    log_user_activity(username.strip().lower() or username, "login_failed")
     flash("Invalid username or password.", "error")
     return render_template("admin_login.html"), 401
 
 
 @app.post("/logout")
 def logout():
+    log_user_activity(session.get("username"), "logout")
     session.clear()
     return redirect(url_for("login"))
 
@@ -1088,11 +1117,60 @@ def admin_users():
         .order("created_at")
         .execute()
     )
+    users = result.data or []
+
+    # Last Login: most recent login_success per username
+    last_logins = {}
+    try:
+        login_rows = (
+            supabase()
+            .from_("user_activity_log")
+            .select("username,occurred_at")
+            .eq("action", "login_success")
+            .order("occurred_at", desc=True)
+            .limit(500)
+            .execute()
+        ).data or []
+        seen = set()
+        for row in login_rows:
+            uname = row["username"]
+            if uname not in seen:
+                seen.add(uname)
+                ts = row["occurred_at"] or ""
+                last_logins[uname] = ts[:10] if ts else ""
+    except Exception as e:
+        print(f"[activity] WARNING: failed to fetch last logins: {e}")
+
+    # Activity feed (superusers only)
+    activity_log = []
+    activity_page = max(1, to_int_or_none(request.args.get("activity_page")) or 1)
+    activity_total_pages = 1
+    if session.get("username") in SUPERUSERS:
+        try:
+            act_start = (activity_page - 1) * ACTIVITY_PAGE_SIZE
+            act_end = act_start + ACTIVITY_PAGE_SIZE - 1
+            act_result = (
+                supabase()
+                .from_("user_activity_log")
+                .select("username,action,ip_address,occurred_at", count="exact")
+                .order("occurred_at", desc=True)
+                .range(act_start, act_end)
+                .execute()
+            )
+            activity_log = act_result.data or []
+            activity_total_pages = max(1, math.ceil((act_result.count or 0) / ACTIVITY_PAGE_SIZE))
+        except Exception as e:
+            print(f"[activity] WARNING: failed to fetch activity log: {e}")
+
     return render_template(
         "admin_users.html",
-        users=result.data or [],
+        users=users,
         current_user_id=session.get("user_id"),
         is_superuser=session.get("username") in SUPERUSERS,
+        last_logins=last_logins,
+        activity_log=activity_log,
+        activity_page=activity_page,
+        activity_total_pages=activity_total_pages,
     )
 
 
