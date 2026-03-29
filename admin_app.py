@@ -33,10 +33,19 @@ app.permanent_session_lifetime = timedelta(hours=8)
 def central_time_filter(utc_dt):
     if not utc_dt:
         return ''
-    if isinstance(utc_dt, str):
-        utc_dt = datetime.fromisoformat(utc_dt)
-    central = utc_dt.astimezone(ZoneInfo('America/Chicago'))
-    return central.strftime('%Y-%m-%d %-I:%M %p')
+    try:
+        if isinstance(utc_dt, str):
+            # Normalize space separator and ensure timezone info is present
+            utc_dt = utc_dt.replace(' ', 'T')
+            if '+' not in utc_dt and 'Z' not in utc_dt:
+                utc_dt += '+00:00'
+            utc_dt = datetime.fromisoformat(utc_dt)
+        if utc_dt.tzinfo is None:
+            utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+        central = utc_dt.astimezone(ZoneInfo('America/Chicago'))
+        return central.strftime('%Y-%m-%d %-I:%M %p')
+    except Exception:
+        return str(utc_dt)
 
 
 @app.after_request
