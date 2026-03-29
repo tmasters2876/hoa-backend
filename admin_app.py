@@ -4,8 +4,7 @@ import io
 import math
 import os
 import re
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import timedelta
 from urllib.parse import urlencode
 
 import bcrypt
@@ -28,25 +27,6 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = os.environ["SECRET_KEY"]
 app.permanent_session_lifetime = timedelta(hours=8)
 
-
-@app.template_filter('central_time')
-def central_time_filter(utc_dt):
-    if not utc_dt:
-        return ''
-    try:
-        if isinstance(utc_dt, str):
-            # Strip tz offset before parsing — Supabase always stores UTC.
-            # fromisoformat on Python <3.11 can't handle "+00:00" suffixes.
-            s = re.sub(r'([+-]\d{2}:?\d{2}|Z)$', '', utc_dt.replace(' ', 'T'))
-            utc_dt = datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
-        if utc_dt.tzinfo is None:
-            utc_dt = utc_dt.replace(tzinfo=timezone.utc)
-        central = utc_dt.astimezone(ZoneInfo('America/Chicago'))
-        # %-I is Linux-only; strip the leading zero from %I explicitly instead
-        hour = central.strftime('%I').lstrip('0') or '12'
-        return central.strftime(f'%Y-%m-%d {hour}:%M %p')
-    except Exception:
-        return str(utc_dt)
 
 
 @app.after_request
@@ -1158,7 +1138,7 @@ def admin_users():
             if uname not in seen:
                 seen.add(uname)
                 ts = row["occurred_at"] or ""
-                last_logins[uname] = ts
+                last_logins[uname] = ts[:16].replace('T', ' ') if ts else ""
     except Exception as e:
         print(f"[activity] WARNING: failed to fetch last logins: {e}")
 
