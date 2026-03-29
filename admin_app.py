@@ -448,7 +448,7 @@ def _apply_pending_change(change: dict):
     if action == "create":
         supabase().from_("clauses").update({"status": "approved"}).eq("id", clause_uuid).execute()
     elif action == "edit":
-        payload = {k: v for k, v in proposed.items()}
+        payload = {k: v for k, v in proposed.items() if not k.startswith('_')}
         payload["status"] = "approved"
         supabase().from_("clauses").update(payload).eq("id", clause_uuid).execute()
     elif action == "delete":
