@@ -35,15 +35,16 @@ def central_time_filter(utc_dt):
         return ''
     try:
         if isinstance(utc_dt, str):
-            # Normalize space separator and ensure timezone info is present
-            utc_dt = utc_dt.replace(' ', 'T')
-            if '+' not in utc_dt and 'Z' not in utc_dt:
-                utc_dt += '+00:00'
-            utc_dt = datetime.fromisoformat(utc_dt)
+            # Strip tz offset before parsing — Supabase always stores UTC.
+            # fromisoformat on Python <3.11 can't handle "+00:00" suffixes.
+            s = re.sub(r'([+-]\d{2}:?\d{2}|Z)$', '', utc_dt.replace(' ', 'T'))
+            utc_dt = datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
         if utc_dt.tzinfo is None:
             utc_dt = utc_dt.replace(tzinfo=timezone.utc)
         central = utc_dt.astimezone(ZoneInfo('America/Chicago'))
-        return central.strftime('%Y-%m-%d %-I:%M %p')
+        # %-I is Linux-only; strip the leading zero from %I explicitly instead
+        hour = central.strftime('%I').lstrip('0') or '12'
+        return central.strftime(f'%Y-%m-%d {hour}:%M %p')
     except Exception:
         return str(utc_dt)
 
