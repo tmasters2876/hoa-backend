@@ -19,6 +19,31 @@
     padding: 3px 9px; border-radius: 999px;
     background: rgba(209,123,15,0.13); color: #7f4b09;
   }
+  .stale-banner {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: #fff8e6; border: 1px solid #f0c040;
+    border-radius: 8px; padding: 10px 14px;
+    margin-bottom: 14px; font-size: 0.9rem; color: #7a5200;
+  }
+  .stale-banner a {
+    white-space: nowrap; font-weight: 700;
+    color: #7a5200; text-decoration: underline;
+  }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.82rem; font-weight: 700;
+    background: #fff3cc; color: #7a5200;
+    border: 1px solid #f0c040; border-radius: 999px;
+    padding: 3px 10px; text-decoration: none;
+  }
+  .filter-chip .chip-remove { font-size: 0.9em; opacity: 0.7; }
+  .badge-stale-inline {
+    display: inline-block; font-size: 0.73rem; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px;
+    background: #fff3cc; color: #7a5200;
+    border: 1px solid #f0c040; vertical-align: middle;
+    margin-left: 6px;
+  }
 </style>
 
 {# ── Help Panel ── #}
@@ -27,77 +52,84 @@
   <div class="help-content">
     <div class="help-section">
       <h3>Browse &amp; Filters</h3>
-      <p>Filter clauses by keyword (searches clause_id, citation, document, summary, and full text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
-      <p>Clause cards show a <strong>⏳ Pending Approval</strong> badge if the clause is awaiting review. Pending clauses are not visible to residents until approved.</p>
+      <p>Filter clauses by keyword (searches clause_id, citation, document, plain summary, and full clause text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
+      <p>Only clauses with <code>status = approved</code> are visible to residents via the Carrd chatbot. All statuses are visible here in the admin console.</p>
+      <p>Clause cards show a <strong>⏳ Pending Approval</strong> badge when a change is queued but not yet approved. The live clause text remains unchanged until the pending change is approved.</p>
+      <p>Cards with an orange left border have a <strong>stale embedding</strong> — the clause text has changed since the embedding was last generated. Stale clauses are excluded from semantic (vector) search until regenerated. A yellow banner at the top of the page appears whenever stale clauses exist; click the link to filter to them directly.</p>
     </div>
     <div class="help-section">
       <h3>Approval Workflow</h3>
-      <p>Every clause change — add, edit, or delete — requires a second admin to approve before it takes effect in search results.</p>
+      <p>Every clause change — add, edit, or delete — must be approved by a second admin before it takes effect in search results.</p>
       <ul>
-        <li><strong>Submit for Approval</strong> — queues the change. The live clause is unchanged until approved.</li>
-        <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately. Use when no other admin is available.</li>
-        <li>Deletions always require a second superuser — self-approve is not available for delete.</li>
-        <li>The <strong>Pending (N)</strong> link in the header turns orange when items are waiting. Superusers review and approve or reject from that page.</li>
+        <li><strong>Submit for Approval</strong> — queues the change in Pending. The live clause is unchanged until approved.</li>
+        <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately, bypassing the two-person rule. Use only when no other admin is available. A warning is recorded in the audit log.</li>
+        <li>Deletions always require a second superuser to approve — self-approve is disabled for deletes.</li>
+        <li>The <strong>Pending (N)</strong> link in the header turns orange when items are waiting. Superusers can approve or reject from that page.</li>
       </ul>
     </div>
     <div class="help-section">
       <h3>Source Verification</h3>
-      <p>When a clause is submitted for approval, the system automatically downloads the linked Google Drive PDF and checks whether the clause text appears on the stated page.</p>
+      <p>When a clause is submitted for approval, the system automatically downloads the linked Google Drive PDF and checks whether the clause text appears on the stated page using fuzzy text matching.</p>
       <ul>
-        <li><strong>✅ Verified</strong> — strong text match found (≥ 80%)</li>
+        <li><strong>✅ Verified</strong> — strong match found (≥ 80% similarity)</li>
         <li><strong>⚠️ Partial</strong> — partial match found (50–79%)</li>
         <li><strong>❌ Not Found</strong> — text not found on that page (&lt; 50%)</li>
-        <li><strong>⏭ Skipped</strong> — PDF could not be accessed or clause text was missing</li>
+        <li><strong>⏭ Skipped</strong> — PDF could not be accessed, or clause text was missing</li>
       </ul>
       <p>Verification is <em>advisory only</em> — it informs the approver but never blocks submission or approval.</p>
-      <p>Three source fields are required on every clause: <strong>Citation</strong>, <strong>Page</strong>, and a <strong>Google Drive link</strong> (<code>https://drive.google.com/…</code>).</p>
+      <p>Three source fields are required on every clause: <strong>Citation</strong>, <strong>Page</strong>, and a <strong>Google Drive link</strong> (<code>https://drive.google.com/…</code>). Clauses missing any of these are rejected at submission.</p>
     </div>
     <div class="help-section">
       <h3>Add Clause</h3>
-      <p>Manually insert a single new clause. Citation, page, and a Google Drive source link are required. At least one of <code>clause_text</code> or <code>plain_summary</code> is required. The embedding is <em>not</em> generated automatically — use <strong>Regenerate Embedding</strong> on the approved clause afterward.</p>
+      <p>Manually add a single clause. Citation, page, and a Google Drive source link are required. At least one of <code>clause_text</code> or <code>plain_summary</code> must be provided.</p>
+      <p>The embedding is <em>not</em> generated automatically on add — use <strong>Regenerate Embedding</strong> on the approved clause afterward so it appears in semantic search results.</p>
+      <p><strong>Precedence Level</strong> controls result ranking when multiple clauses match a query. Higher values rank higher. Use 0 (default) for standard clauses; reserve higher values for overriding or primary governing documents.</p>
     </div>
     <div class="help-section">
       <h3>Import CSV — Add</h3>
-      <p>Bulk-inserts clauses from a .csv file. Each row must include <code>citation</code>, <code>page</code>, and a Google Drive <code>link</code> — rows missing any of these are skipped. CSV imports go live immediately (no approval step). Column rules:</p>
+      <p>Bulk-inserts clauses from a .csv file. Download the blank template for the correct column layout. Each row must include <code>citation</code>, <code>page</code>, and a Google Drive <code>link</code> — rows missing any of these are skipped. CSV imports go live immediately (no approval step). Column rules:</p>
       <ul>
         <li>At least one of <code>clause_text</code> or <code>plain_summary</code> must be non-empty per row</li>
         <li><code>page</code> and <code>precedence_level</code> must be whole numbers if provided</li>
         <li><code>tags</code> — comma-separated, e.g. <code>fence, arc</code></li>
         <li><code>match_source</code> defaults to <code>CSV Import</code> if omitted</li>
-        <li>Columns not in the template are rejected; valid rows are inserted even if others fail</li>
+        <li>Columns not in the template are rejected; valid rows are inserted even if others in the same file fail</li>
       </ul>
-      <p>All imported clauses start with <strong>stale embeddings</strong> and won't appear in semantic search until regenerated.</p>
+      <p>All imported clauses start with <strong>stale embeddings</strong> and will not appear in semantic search until regenerated. The yellow stale banner will appear after import as a reminder.</p>
     </div>
     <div class="help-section">
       <h3>Import CSV — Delete</h3>
-      <p>Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the file. <strong>There is no undo.</strong> CSV bulk deletes go live immediately (no approval step). The CSV must contain a <code>clause_id</code> column; all other columns are ignored.</p>
+      <p>Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the uploaded file. <strong>There is no undo.</strong> Bulk CSV deletes go live immediately — no approval step, no second-person requirement. The CSV must contain a <code>clause_id</code> column; all other columns are ignored.</p>
     </div>
     <div class="help-section">
       <h3>Embeddings</h3>
-      <p>Each clause has an embedding — a numeric vector used for semantic search by the HOA chatbot.</p>
+      <p>Each clause stores an embedding — a numeric vector used for semantic (meaning-based) search by the HOA chatbot. Keyword search is unaffected by embedding status.</p>
       <ul>
         <li>Editing <code>clause_text</code> or <code>plain_summary</code> marks the embedding stale when the edit is approved and applied.</li>
         <li>Stale clauses are excluded from vector search results until regenerated.</li>
-        <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it. No approval required.</li>
+        <li>The yellow banner at the top of the page shows how many stale embeddings exist and links to a filtered view.</li>
+        <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it. No approval required — takes effect immediately.</li>
         <li>Model in use: <code>{{ embedding_model }}</code></li>
       </ul>
     </div>
     <div class="help-section">
+      <h3>Search Test</h3>
+      <p>Runs a live query using the same logic as the production chatbot — both semantic (vector) and keyword searches execute simultaneously against the Supabase <code>match_clauses</code> RPC. Results are displayed in two columns: <strong>Vector Matches</strong> and <strong>Keyword Matches</strong>.</p>
+      <p>Use this to verify a question surfaces the expected clauses before testing in the resident-facing frontend. Only approved clauses with valid embeddings appear in vector results.</p>
+    </div>
+    <div class="help-section">
       <h3>Audit Log</h3>
-      <p>Every action — clause adds, edits, deletes, approvals, rejections, user changes, and CSV imports — is recorded in the audit log. Accessible via the <strong>Audit Log</strong> link in the header (superusers only). Filter by user, action type, or date range.</p>
+      <p>Every action is recorded — clause adds, edits, deletes, approvals, rejections, embedding regenerations, user changes, password resets, and CSV imports. Accessible via the <strong>Audit Log</strong> link in the header (superusers only). Filter by user, action type, or date range. All timestamps are displayed in UTC.</p>
     </div>
     <div class="help-section">
       <h3>User Management</h3>
       <p>Accessible via the <strong>Users</strong> link in the header.</p>
       <ul>
-        <li><strong>Superusers</strong> (tmasters, cmasters) — can add, deactivate, delete, and reset passwords for other users.</li>
-        <li><strong>All users</strong> — can change their own password from the Users page.</li>
+        <li><strong>Superusers</strong> (tmasters, cmasters) — can add, deactivate, delete, and reset passwords for other users. Superuser status cannot be granted or removed from the UI.</li>
+        <li><strong>All users</strong> — can change their own password from the Users page via <strong>Change Password</strong>.</li>
         <li>You cannot deactivate or delete your own account from the admin UI.</li>
+        <li>Login sessions expire after 8 hours. Login and logout events are recorded in the activity log.</li>
       </ul>
-    </div>
-    <div class="help-section">
-      <h3>Search Test</h3>
-      <p>Runs a live query using the same embedding model and Supabase <code>match_clauses</code> RPC as the production chatbot. Use this to verify that a question surfaces the expected clauses before testing in the frontend. Only approved clauses appear in results.</p>
     </div>
   </div>
 </details>
@@ -262,6 +294,21 @@
         </div>
       </div>
 
+      {% if stale_count > 0 and not filters.stale %}
+      <div class="stale-banner">
+        <span>⚠️ <strong>{{ stale_count }} clause{% if stale_count != 1 %}s{% endif %}</strong> have stale embeddings — they may not appear correctly in search results.</span>
+        <a href="{{ url_for('admin_home') }}?stale=1">View Stale Clauses</a>
+      </div>
+      {% endif %}
+
+      {% if filters.stale %}
+      <div style="margin-bottom:12px;">
+        <a class="filter-chip" href="{{ url_for('admin_home') }}">
+          ⚠️ Stale Embeddings Only <span class="chip-remove">✕</span>
+        </a>
+      </div>
+      {% endif %}
+
       <div class="clause-list">
         {% for clause in clauses %}
           <article class="clause-card{% if clause.embedding_stale %} stale-embedding{% endif %}">
@@ -269,7 +316,7 @@
             {# Always-visible header #}
             <div class="clause-head">
               <div>
-                <strong>{{ clause.citation or clause.clause_id or clause.id }}</strong>
+                <strong>{{ clause.citation or clause.clause_id or clause.id }}</strong>{% if clause.embedding_stale %}<span class="badge-stale-inline">⚠️ Stale</span>{% endif %}
                 <div class="clause-meta">
                   {{ clause.document or "No document" }}
                   {% if clause.page %}&bull; p.{{ clause.page }}{% endif %}
