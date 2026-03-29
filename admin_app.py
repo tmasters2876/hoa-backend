@@ -215,7 +215,7 @@ def fetch_clause(clause_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def browse_clauses(keyword: str, tag: str, document: str, page: int) -> tuple[list[dict], int]:
+def browse_clauses(keyword: str, tag: str, document: str, page: int, stale: bool = False) -> tuple[list[dict], int]:
     query = supabase().from_("clauses").select(CLAUSE_COLUMNS, count="exact")
     if keyword:
         query = query.or_(build_keyword_filter(keyword))
@@ -223,6 +223,8 @@ def browse_clauses(keyword: str, tag: str, document: str, page: int) -> tuple[li
         query = query.contains("tags", [tag])
     if document:
         query = query.eq("document", document)
+    if stale:
+        query = query.is_("embedding", "null")
 
     start = (page - 1) * PAGE_SIZE
     end = start + PAGE_SIZE - 1
@@ -265,6 +267,7 @@ def current_filters() -> dict:
         "document": request.args.get("document", "").strip(),
         "page": max(1, to_int_or_none(request.args.get("page")) or 1),
         "test_query": request.args.get("test_query", "").strip(),
+        "stale": request.args.get("stale", "").strip(),
     }
 
 
@@ -565,18 +568,27 @@ def root():
 @login_required
 def admin_home():
     filters = current_filters()
+    stale_filter = bool(filters["stale"])
     try:
         clauses, total_count = browse_clauses(
             keyword=filters["q"],
             tag=filters["tag"],
             document=filters["document"],
             page=filters["page"],
+            stale=stale_filter,
         )
     except Exception:
         flash("Search filter could not be applied — showing all clauses.", "error")
         clauses, total_count = browse_clauses(keyword="", tag=filters["tag"], document=filters["document"], page=1)
     documents, tags = get_filter_options()
     search_test = run_search_test(filters["test_query"]) if filters["test_query"] else None
+
+    # Count clauses with stale embeddings for the dashboard banner
+    try:
+        stale_result = supabase().from_("clauses").select("id", count="exact").is_("embedding", "null").execute()
+        stale_count = stale_result.count or 0
+    except Exception:
+        stale_count = 0
 
     total_pages = max(1, math.ceil(total_count / PAGE_SIZE)) if total_count else 1
     query_args = {k: v for k, v in filters.items() if k != "page" and v}
@@ -609,6 +621,7 @@ def admin_home():
         next_url=next_url,
         search_test=search_test,
         embedding_model=OPENAI_EMBEDDING_MODEL,
+        stale_count=stale_count,
     )
 
 
