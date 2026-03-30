@@ -118,7 +118,6 @@ def format_clauses_for_prompt(clauses):
         link = c.get("link", "")
         summary = c.get("plain_summary", "No summary provided.")
         source = c.get("match_source", "Unknown")
-        clause_id = c.get("clause_id", "")
         document = c.get("document", "Unknown")
 
         clause_text_full = c.get("clause_text") or ""
@@ -134,8 +133,7 @@ def format_clauses_for_prompt(clauses):
         entry = (
             f"<b>{idx}. <strong>Summary</strong>: According to {link_html}, {summary}.</b><br>"
             f"<strong>Match Source</strong>: {source} • "
-            f"<code>{document}</code> • "
-            f"<strong>Reviewer ID</strong>: <code>{clause_id}</code><br>"
+            f"<code>{document}</code><br>"
         )
 
         if clause_text_to_show:
