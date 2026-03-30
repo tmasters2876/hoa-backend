@@ -87,7 +87,7 @@
     </div>
     <div class="help-section">
       <h3>Import CSV — Add</h3>
-      <p>Bulk-inserts clauses from a .csv file. Download the blank template for the correct column layout. Each row must include <code>citation</code>, <code>page</code>, and a Google Drive <code>link</code> — rows missing any of these are skipped. CSV imports go live immediately (no approval step). Column rules:</p>
+      <p><strong>Superusers only.</strong> Bulk-inserts clauses from a .csv file. Download the blank template for the correct column layout. Each row must include <code>citation</code>, <code>page</code>, and a Google Drive <code>link</code> — rows missing any of these are skipped. CSV imports go live immediately (no approval step). Column rules:</p>
       <ul>
         <li>At least one of <code>clause_text</code> or <code>plain_summary</code> must be non-empty per row</li>
         <li><code>page</code> and <code>precedence_level</code> must be whole numbers if provided</li>
@@ -99,7 +99,7 @@
     </div>
     <div class="help-section">
       <h3>Import CSV — Delete</h3>
-      <p>Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the uploaded file. <strong>There is no undo.</strong> Bulk CSV deletes go live immediately — no approval step, no second-person requirement. The CSV must contain a <code>clause_id</code> column; all other columns are ignored.</p>
+      <p><strong>Superusers only.</strong> Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the uploaded file. <strong>There is no undo.</strong> Bulk CSV deletes go live immediately — no approval step, no second-person requirement. The CSV must contain a <code>clause_id</code> column; all other columns are ignored.</p>
     </div>
     <div class="help-section">
       <h3>Embeddings</h3>

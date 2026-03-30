@@ -4,6 +4,7 @@ import io
 import math
 import os
 import re
+import threading
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
@@ -50,6 +51,38 @@ PAGE_SIZE = 25
 AUDIT_PAGE_SIZE = 50
 PENDING_PAGE_SIZE = 25
 ACTIVITY_PAGE_SIZE = 25
+
+# ── Brute force protection ────────────────────────────────────────────────────
+_login_attempts: dict[str, list] = {}
+_login_attempts_lock = threading.Lock()
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
+
+def _login_attempt_key(username: str) -> str:
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    return f"{username.lower()}::{ip}"
+
+def _is_login_locked(key: str) -> bool:
+    with _login_attempts_lock:
+        attempts = _login_attempts.get(key, [])
+        now = datetime.now(timezone.utc).timestamp()
+        attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_SECONDS]
+        _login_attempts[key] = attempts
+        return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+def _record_login_failure(key: str):
+    with _login_attempts_lock:
+        now = datetime.now(timezone.utc).timestamp()
+        attempts = _login_attempts.get(key, [])
+        attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_SECONDS]
+        attempts.append(now)
+        _login_attempts[key] = attempts
+        print(f"[brute-force] key={key!r} attempt_count={len(attempts)}", flush=True)
+
+def _clear_login_attempts(key: str):
+    with _login_attempts_lock:
+        _login_attempts.pop(key, None)
+
 
 SUPERUSERS = {'tmasters', 'cmasters'}
 
@@ -461,8 +494,16 @@ def login():
 def login_post():
     username = request.form.get("username", "")
     password = request.form.get("password", "")
+    key = _login_attempt_key(username)
+
+    if _is_login_locked(key):
+        log_user_activity(username.strip().lower() or username, "login_blocked")
+        flash("Too many failed attempts. Please wait 15 minutes before trying again.", "error")
+        return render_template("admin_login.html"), 429
+
     user = lookup_and_verify_user(username, password)
     if user:
+        _clear_login_attempts(key)
         session.permanent = True
         session["logged_in"] = True
         session["user_id"] = user["id"]
@@ -474,6 +515,8 @@ def login_post():
             flash("Welcome! Please set your own password before continuing.", "success")
             return redirect(url_for("force_change_password"))
         return redirect(url_for("admin_home"))
+
+    _record_login_failure(key)
     log_user_activity(username.strip().lower() or username, "login_failed")
     flash("Invalid username or password.", "error")
     return render_template("admin_login.html"), 401
@@ -854,7 +897,7 @@ def regenerate_clause_embedding(clause_id: str):
 
 
 @app.get("/admin/import/template")
-@login_required
+@superuser_required
 def import_template():
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=TEMPLATE_HEADERS)
@@ -880,7 +923,7 @@ def import_template():
 
 
 @app.post("/admin/import")
-@login_required
+@superuser_required
 def import_clauses():
     file = request.files.get("csv_file")
     if not file or not file.filename:
@@ -1014,7 +1057,7 @@ def import_clauses():
 
 
 @app.get("/admin/bulk-delete/template")
-@login_required
+@superuser_required
 def bulk_delete_template():
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=TEMPLATE_HEADERS)
@@ -1040,7 +1083,7 @@ def bulk_delete_template():
 
 
 @app.post("/admin/bulk-delete")
-@login_required
+@superuser_required
 def bulk_delete_clauses():
     file = request.files.get("delete_csv_file")
     if not file or not file.filename:
@@ -1548,4 +1591,4 @@ def reject_pending(change_id: str):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5051))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(debug=False, host="0.0.0.0", port=port, threaded=False)
