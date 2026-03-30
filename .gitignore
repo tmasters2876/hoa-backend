@@ -171,3 +171,8 @@ venv/
 
 # Environment secrets
 .env
+migrate_builders_2022.py
+builders_guidelines_2022_supabase_update_ai.csv
+fix_missing_embeddings.py
+fix_missing_embeddings.py
+migrate_builders_2022.py

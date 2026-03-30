@@ -118,7 +118,7 @@
                 {% endif %}
               </td>
               <td class="clause-meta">{{ user.created_at[:10] if user.created_at else '—' }}</td>
-              <td class="clause-meta">{{ last_logins.get(user.username) or 'Never' }}</td>
+              <td class="clause-meta">{{ last_logins.get(user.username) or 'Never' }}{% if last_logins.get(user.username) %} <span class="muted" style="font-size:0.78rem;">UTC</span>{% endif %}</td>
               <td>
                 {% if user.id != current_user_id and is_superuser %}
                   <div class="button-row" style="gap: 6px;">
@@ -181,7 +181,7 @@
         <tbody>
           {% for entry in activity_log %}
           <tr>
-            <td class="clause-meta">{{ entry.occurred_at[:16].replace('T', ' ') if entry.occurred_at else '—' }}</td>
+            <td class="clause-meta">{{ entry.occurred_at[:16].replace('T', ' ') if entry.occurred_at else '—' }} {% if entry.occurred_at %}<span class="muted" style="font-size:0.78rem;">UTC</span>{% endif %}</td>
             <td>{{ entry.username or '—' }}</td>
             <td>
               {% if entry.action == 'login_success' %}
