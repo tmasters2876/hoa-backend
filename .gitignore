@@ -176,3 +176,8 @@ builders_guidelines_2022_supabase_update_ai.csv
 fix_missing_embeddings.py
 fix_missing_embeddings.py
 migrate_builders_2022.py
+import_tx_chapter_209.py
+tx_chapter_202.csv
+tx_chapter_209.csv
+tx_chapter_207.csv
+fix_tags_supabase.py

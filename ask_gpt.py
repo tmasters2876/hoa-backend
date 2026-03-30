@@ -1,7 +1,6 @@
 import os
 import re
 import random
-from collections import defaultdict
 from dotenv import load_dotenv
 from supabase import create_client
 from openai import OpenAI
@@ -43,7 +42,7 @@ def check_instant_whimsy(question_lower):
         ])
     elif any(k in question_lower for k in dragon_keywords):
         return random.choice([
-            "Dragons? I guard HOA secrets like a scaly beast, but I can’t help with fire-breathing dragons. Try fences instead!",
+            "Dragons? I guard HOA secrets like a scaly beast, but I can't help with fire-breathing dragons. Try fences instead!",
             "Ah, dragons and castles! Sadly I handle covenants, not quests. Ask me about sheds!",
             "If you see a wizard in your yard, call the ARC — or maybe just me. 🧙‍♂️"
         ])
@@ -155,14 +154,14 @@ def format_clauses_for_prompt(clauses):
 def build_gpt_prompt(question, clause_text, no_matches=False):
     if no_matches:
         fallback_msg = (
-            “Note: No clauses matched this question directly. “
-            “The clauses below are the closest general rules that may apply — “
-            “they may not address the resident's situation exactly.<br><br>”
+            "Note: No clauses matched this question directly. "
+            "The clauses below are the closest general rules that may apply — "
+            "they may not address the resident's situation exactly.<br><br>"
         )
     else:
-        fallback_msg = “”
+        fallback_msg = ""
 
-    return f”””Resident Question:
+    return f"""Resident Question:
 {question}
 
 {fallback_msg}Relevant Clauses:
@@ -175,12 +174,12 @@ Guidelines:
 4. Never fabricate rules or cite documents not represented in the clauses above.
 5. If the provided clauses do not clearly answer the question, say so plainly and recommend the resident contact the ARC or board for a definitive answer.
 6. Never provide legal advice. For specific legal questions, recommend consulting a licensed attorney.
-7. Use HTML for citations: <a href=”link” target=”_blank”>Citation Text</a>
-8. Close with: “If you have any other questions, feel free to ask!”
+7. Use HTML for citations: <a href="link" target="_blank">Citation Text</a>
+8. Close with: "If you have any other questions, feel free to ask!"
 ---
 
 Final Answer:
-“””
+"""
 
 # =========================
 # Vector + Fallback Matching (with ranking)
