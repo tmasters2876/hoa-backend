@@ -223,6 +223,7 @@
     </details>
 
     {# Import CSV — Add #}
+    {% if is_superuser %}
     <div class="panel">
       <div class="panel-title-row">
         <h2>Import CSV</h2>
@@ -239,8 +240,10 @@
         <button type="submit">Import and Add</button>
       </form>
     </div>
+    {% endif %}
 
     {# Import CSV — Delete #}
+    {% if is_superuser %}
     <div class="panel danger-zone">
       <div class="panel-title-row">
         <h2>Import CSV</h2>
@@ -259,6 +262,7 @@
         <button class="danger" type="submit">Delete from CSV</button>
       </form>
     </div>
+    {% endif %}
 
     {# Search Test #}
     <div class="panel">
