@@ -153,31 +153,34 @@ def format_clauses_for_prompt(clauses):
 # GPT Prompt
 # =========================
 def build_gpt_prompt(question, clause_text, no_matches=False):
-    fallback_msg = (
-        "⚠️ There were no direct matches to this question. Below are general HOA rules that might still help you respond.<br><br>"
-        if no_matches else ""
-    )
-    return f"""You are an HOA policy assistant. Use both the clause summaries and original clause texts to answer clearly.
+    if no_matches:
+        fallback_msg = (
+            “Note: No clauses matched this question directly. “
+            “The clauses below are the closest general rules that may apply — “
+            “they may not address the resident's situation exactly.<br><br>”
+        )
+    else:
+        fallback_msg = “”
 
-Resident Question:
+    return f”””Resident Question:
 {question}
 
-{fallback_msg}
-Relevant Clauses:
+{fallback_msg}Relevant Clauses:
 {clause_text}
 
 Guidelines:
-1. Summarize each relevant clause (use both summary and key clause text).
-2. Clearly state if the rules allow or prohibit the activity (e.g., Airbnb).
-3. If unclear, recommend checking with the ARC.
-4. Close with: “If you have any other questions, feel free to ask!”
-
-Use HTML for citations like this: <a href="link" target="_blank">Art. VI</a>
-Example: When citing a source like this [Source](https://drive.google.com/file/d/1Km1fGsfmtiMso2Wwkb-crcuOYa3k7a4t/view?usp=drive_link), Use HTML for citations like this: [Source] <a href="https://drive.google.com/file/d/1Km1fGsfmtiMso2Wwkb-crcuOYa3k7a4t/view?usp=drive_link" target="_blank">Art. VI</a>
+1. When summarizing a clause, reference the document name (e.g., CCRs, 2022 Builders Guidelines, Texas Property Code) as well as the citation.
+2. Clearly state whether the activity in question is allowed, prohibited, or unclear under the rules provided.
+3. When a clause comes from the Texas Property Code, note that it represents a state law minimum that applies to all HOAs in Texas.
+4. Never fabricate rules or cite documents not represented in the clauses above.
+5. If the provided clauses do not clearly answer the question, say so plainly and recommend the resident contact the ARC or board for a definitive answer.
+6. Never provide legal advice. For specific legal questions, recommend consulting a licensed attorney.
+7. Use HTML for citations: <a href=”link” target=”_blank”>Citation Text</a>
+8. Close with: “If you have any other questions, feel free to ask!”
 ---
 
 Final Answer:
-"""
+“””
 
 # =========================
 # Vector + Fallback Matching (with ranking)
@@ -336,7 +339,20 @@ def answer_question(question, tags=None, mode="default", structure_type=None, co
     gpt_response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are an expert HOA assistant."},
+            {"role": "system", "content": (
+                "You are the PLCA Board Assistant for Plantation Lakes Community Association (PLCA), "
+                "located in Waller and Grimes Counties, Texas. "
+                "You help residents understand their community's governing documents in plain English. "
+                "The governing documents rank in the following order of authority, from highest to lowest: "
+                "Texas Property Code, then CCRs and Declarations, then Amendments to CCRs, "
+                "then Bylaws, then Board Resolutions and Fine Policies, then the 2022 Builders Guidelines. "
+                "When state law conflicts with HOA documents, note that Texas state law governs. "
+                "Always be helpful and friendly. Never provide legal advice — for legal questions, "
+                "recommend consulting a licensed attorney. "
+                "For decisions requiring board or ARC approval, always recommend the resident contact "
+                "the ARC or board directly for a final determination. "
+                "Never fabricate rules or reference documents not provided in the context."
+            )},
             {"role": "user", "content": prompt}
         ],
         temperature=0.4
