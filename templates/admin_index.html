@@ -85,6 +85,7 @@
       <p>The embedding is <em>not</em> generated automatically on add — use <strong>Regenerate Embedding</strong> on the approved clause afterward so it appears in semantic search results.</p>
       <p><strong>Precedence Level</strong> controls result ranking when multiple clauses match a query. Higher values rank higher. Use 0 (default) for standard clauses; reserve higher values for overriding or primary governing documents.</p>
     </div>
+    {% if is_superuser %}
     <div class="help-section">
       <h3>Import CSV — Add</h3>
       <p><strong>Superusers only.</strong> Bulk-inserts clauses from a .csv file. Download the blank template for the correct column layout. Each row must include <code>citation</code>, <code>page</code>, and a Google Drive <code>link</code> — rows missing any of these are skipped. CSV imports go live immediately (no approval step). Column rules:</p>
@@ -97,10 +98,13 @@
       </ul>
       <p>All imported clauses start with <strong>stale embeddings</strong> and will not appear in semantic search until regenerated. The yellow stale banner will appear after import as a reminder.</p>
     </div>
+    {% endif %}
+    {% if is_superuser %}
     <div class="help-section">
       <h3>Import CSV — Delete</h3>
       <p><strong>Superusers only.</strong> Permanently deletes every Supabase row whose <code>clause_id</code> matches a value in the uploaded file. <strong>There is no undo.</strong> Bulk CSV deletes go live immediately — no approval step, no second-person requirement. The CSV must contain a <code>clause_id</code> column; all other columns are ignored.</p>
     </div>
+    {% endif %}
     <div class="help-section">
       <h3>Embeddings</h3>
       <p>Each clause stores an embedding — a numeric vector used for semantic (meaning-based) search by the HOA chatbot. Keyword search is unaffected by embedding status.</p>
