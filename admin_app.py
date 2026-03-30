@@ -504,6 +504,7 @@ def login_post():
     user = lookup_and_verify_user(username, password)
     if user:
         _clear_login_attempts(key)
+        session.clear() 
         session.permanent = True
         session["logged_in"] = True
         session["user_id"] = user["id"]
