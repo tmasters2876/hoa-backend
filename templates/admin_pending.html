@@ -3,6 +3,11 @@
 {% block topbar %}
 <div class="topbar">
   <span class="topbar-title">Pending Approvals</span>
+  {% if total_count is defined and total_count > 0 %}
+  <span class="topbar-sub">{{ total_count }} item{{ 's' if total_count != 1 else '' }} awaiting review</span>
+  {% endif %}
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
 </div>
 {% endblock %}
 
@@ -11,29 +16,33 @@
   .pending-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.88rem;
+    font-size: 13px;
   }
   .pending-table th,
   .pending-table td {
     text-align: left;
     vertical-align: top;
-    border-bottom: 1px solid var(--line);
-    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
   }
   .pending-table th {
-    font-size: 0.82rem;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--muted);
     white-space: nowrap;
+    background: var(--surface-2);
   }
   .pending-table td.mono {
-    font-family: ui-monospace, monospace;
-    font-size: 0.82rem;
+    font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+    font-size: 12px;
     color: var(--muted);
     white-space: nowrap;
   }
   .pending-table td.diff {
-    font-family: ui-monospace, monospace;
-    font-size: 0.8rem;
+    font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+    font-size: 12px;
     word-break: break-word;
     max-width: 240px;
   }
@@ -41,17 +50,17 @@
     display: inline-block;
     padding: 2px 9px;
     border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
     white-space: nowrap;
   }
-  .action-pill.create { background: rgba(11,110,79,0.13);  color: #0b6e4f; }
-  .action-pill.edit   { background: rgba(209,123,15,0.13); color: #7f4b09; }
-  .action-pill.delete { background: rgba(161,45,47,0.13);  color: #a12d2f; }
+  .action-pill.create { background: var(--accent-light);        color: var(--accent); }
+  .action-pill.edit   { background: var(--accent-2-light);      color: #7a5200; }
+  .action-pill.delete { background: var(--danger-light);        color: var(--danger); }
   .self-warn {
-    font-size: 0.76rem;
+    font-size: 11px;
     color: var(--accent-2);
-    font-weight: 700;
+    font-weight: 600;
     display: block;
     margin-top: 3px;
   }
@@ -59,8 +68,8 @@
     cursor: pointer;
     user-select: none;
     list-style: none;
-    font-size: 0.82rem;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--danger);
     padding: 4px 0;
   }
@@ -71,17 +80,23 @@
     display: grid;
     gap: 6px;
     margin-top: 8px;
-    padding: 8px;
-    background: rgba(161,45,47,0.04);
-    border: 1px solid rgba(161,45,47,0.2);
-    border-radius: 10px;
+    padding: 10px;
+    background: var(--danger-light);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-md);
   }
-  .reject-form label { font-size: 0.8rem; }
-  .reject-form textarea { font-size: 0.85rem; min-height: 60px; }
+  .reject-form label { font-size: 11px; }
+  .reject-form textarea { font-size: 12px; min-height: 60px; }
   .diff-row { margin-bottom: 6px; }
-  .diff-label { font-size: 0.75rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-  .diff-old { color: var(--danger); text-decoration: line-through; font-size: 0.82rem; }
-  .diff-new { color: #0b6e4f; font-size: 0.82rem; }
+  .diff-label {
+    font-size: 10px;
+    color: var(--muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .diff-old { color: var(--danger); text-decoration: line-through; font-size: 12px; }
+  .diff-new { color: var(--accent); font-size: 12px; }
   .filter-bar {
     display: flex;
     flex-wrap: wrap;
@@ -94,42 +109,31 @@
     gap: 4px;
     min-width: 140px;
   }
-  .filter-bar label { font-size: 0.8rem; font-weight: 700; margin-bottom: 0; }
-  .filter-bar select, .filter-bar input { font-size: 0.88rem; padding: 7px 10px; border-radius: 10px; }
-  .filter-bar button { width: auto; padding: 8px 20px; font-size: 0.88rem; align-self: flex-end; }
-  .pagination {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-    font-size: 0.9rem;
+  .filter-bar label { font-size: 12px; font-weight: 600; margin-bottom: 0; }
+  .filter-bar select, .filter-bar input {
+    font-size: 13px; padding: 7px 10px; border-radius: var(--radius-md);
   }
-  .pagination a { font-weight: 700; }
+  .filter-bar button { width: auto; padding: 8px 20px; font-size: 13px; align-self: flex-end; }
   .verify-badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 8px;
     border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
     white-space: nowrap;
   }
-  .verify-badge.verified  { background: rgba(11,110,79,0.13);  color: #0b6e4f; }
-  .verify-badge.partial   { background: rgba(209,123,15,0.13); color: #7f4b09; }
-  .verify-badge.not_found { background: rgba(161,45,47,0.13);  color: #a12d2f; }
-  .verify-badge.skipped   { background: rgba(0,0,0,0.07);      color: #58656d; }
-  .verify-note { font-size: 0.72rem; color: var(--muted); margin-top: 3px; font-style: italic; }
+  .verify-badge.verified  { background: var(--accent-light);   color: var(--accent); }
+  .verify-badge.partial   { background: var(--accent-2-light);  color: #7a5200; }
+  .verify-badge.not_found { background: var(--danger-light);    color: var(--danger); }
+  .verify-badge.skipped   { background: var(--surface-2);       color: var(--muted); border: 1px solid var(--border); }
+  .verify-note { font-size: 11px; color: var(--muted); margin-top: 3px; font-style: italic; }
 </style>
 
-<div class="stack" style="margin-top: 20px;">
+<div class="stack">
 
   <div class="panel">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-      <h2 style="margin:0;">Pending Approvals</h2>
-      <a href="{{ url_for('admin_home') }}" style="font-size:0.92rem;">&larr; Back to Clauses</a>
-    </div>
-
     <form method="get" action="{{ url_for('admin_pending') }}" class="filter-bar">
       <div class="field">
         <label for="f-action">Action</label>
@@ -187,7 +191,7 @@
               {% if entry.proposed_changes %}{{ entry.proposed_changes.get("clause_id") or "—" }}{% else %}—{% endif %}
               {% endif %}
             </td>
-            <td style="font-size:0.85rem; max-width:160px; word-break:break-word;">
+            <td style="font-size:13px; max-width:160px; word-break:break-word;">
               {% if live %}{{ live.citation or "—" }}{% else %}
               {% if entry.proposed_changes %}{{ entry.proposed_changes.get("citation") or "—" }}{% else %}—{% endif %}
               {% endif %}
@@ -225,7 +229,7 @@
             </td>
             <td>
               {% if entry.action == 'delete' %}
-                <span class="muted" style="font-size:0.82rem;">—</span>
+                <span class="muted" style="font-size:12px;">—</span>
               {% else %}
                 {% set verif = (entry.proposed_changes or {}).get("_verification") or {} %}
                 {% set vstatus = verif.get("status") or "skipped" %}
@@ -246,10 +250,10 @@
               <form method="post" action="{{ url_for('approve_pending', change_id=entry.id) }}"
                     onsubmit="return confirm('{% if is_self %}⚠ You are approving your own change. Self-approve?{% else %}Approve this change?{% endif %}');">
                 {% if is_self and entry.action == 'delete' %}
-                  <span class="muted" style="font-size:0.82rem;">Needs another superuser</span>
+                  <span class="muted" style="font-size:12px;">Needs another superuser</span>
                 {% else %}
-                  <button type="submit"
-                          style="font-size:0.82rem; padding:5px 12px; {% if is_self %}background:var(--accent-2);{% endif %}">
+                  <button type="submit" class="ghost {% if is_self %}amber{% else %}green{% endif %}"
+                          style="font-size:12px;">
                     Approve
                   </button>
                   {% if is_self %}
@@ -263,7 +267,7 @@
                 <form method="post" action="{{ url_for('reject_pending', change_id=entry.id) }}" class="reject-form">
                   <label for="rn-{{ entry.id }}">Reason (required)</label>
                   <textarea id="rn-{{ entry.id }}" name="review_notes" required></textarea>
-                  <button class="danger" type="submit" style="font-size:0.82rem; padding:5px 12px;">Confirm Reject</button>
+                  <button class="danger" type="submit" style="font-size:12px;">Confirm Reject</button>
                 </form>
               </details>
             </td>
