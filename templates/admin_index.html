@@ -1,50 +1,40 @@
 {% extends "admin_base.html" %}
 
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Clauses</span>
+  <span class="topbar-sub">{{ total_count }} clause{{ 's' if total_count != 1 else '' }}</span>
+  <div class="topbar-spacer"></div>
+  {% if stale_count > 0 %}
+  <a href="{{ url_for('admin_home') }}?stale=1" class="stale-chip">
+    <span class="stale-dot"></span>
+    {{ stale_count }} stale embedding{{ 's' if stale_count != 1 else '' }}
+  </a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block stat_tiles %}
+<div class="stat-row">
+  <div class="stat-tile ok">
+    <div class="stat-label">Approved</div>
+    <div class="stat-num">{{ total_count }}</div>
+    <div class="stat-sub">visible to residents</div>
+  </div>
+  <div class="stat-tile {% if stale_count > 0 %}warn{% endif %}">
+    <div class="stat-label">Stale embeddings</div>
+    <div class="stat-num">{{ stale_count }}</div>
+    <div class="stat-sub">excluded from vector search</div>
+  </div>
+  <div class="stat-tile {% if pending_count > 0 %}warn{% endif %}">
+    <div class="stat-label">Pending approval</div>
+    <div class="stat-num">{{ pending_count }}</div>
+    <div class="stat-sub">awaiting second admin</div>
+  </div>
+</div>
+{% endblock %}
+
 {% block content %}
-<style>
-  .req { color: var(--danger); margin-left: 2px; }
-  .field-help { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
-  .btn-view-source {
-    display: inline-block;
-    font-size: 0.78rem; font-weight: 700; white-space: nowrap;
-    padding: 4px 10px; border-radius: 999px;
-    background: rgba(11,110,79,0.10); color: var(--accent);
-    text-decoration: none; border: 1px solid rgba(11,110,79,0.25);
-    line-height: 1.4;
-  }
-  .btn-view-source:hover { background: rgba(11,110,79,0.18); }
-  .badge-no-source {
-    display: inline-block;
-    font-size: 0.76rem; font-weight: 700; white-space: nowrap;
-    padding: 3px 9px; border-radius: 999px;
-    background: rgba(209,123,15,0.13); color: #7f4b09;
-  }
-  .stale-banner {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    background: #fff8e6; border: 1px solid #f0c040;
-    border-radius: 8px; padding: 10px 14px;
-    margin-bottom: 14px; font-size: 0.9rem; color: #7a5200;
-  }
-  .stale-banner a {
-    white-space: nowrap; font-weight: 700;
-    color: #7a5200; text-decoration: underline;
-  }
-  .filter-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 0.82rem; font-weight: 700;
-    background: #fff3cc; color: #7a5200;
-    border: 1px solid #f0c040; border-radius: 999px;
-    padding: 3px 10px; text-decoration: none;
-  }
-  .filter-chip .chip-remove { font-size: 0.9em; opacity: 0.7; }
-  .badge-stale-inline {
-    display: inline-block; font-size: 0.73rem; font-weight: 700;
-    padding: 2px 7px; border-radius: 999px;
-    background: #fff3cc; color: #7a5200;
-    border: 1px solid #f0c040; vertical-align: middle;
-    margin-left: 6px;
-  }
-</style>
 
 {# ── Help Panel ── #}
 <details class="panel help-panel">
@@ -55,7 +45,7 @@
       <p>Filter clauses by keyword (searches clause_id, citation, document, plain summary, and full clause text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
       <p>Only clauses with <code>status = approved</code> are visible to residents via the Carrd chatbot. All statuses are visible here in the admin console.</p>
       <p>Clause cards show a <strong>⏳ Pending Approval</strong> badge when a change is queued but not yet approved. The live clause text remains unchanged until the pending change is approved.</p>
-      <p>Cards with an orange left border have a <strong>stale embedding</strong> — the clause text has changed since the embedding was last generated. Stale clauses are excluded from semantic (vector) search until regenerated. A yellow banner at the top of the page appears whenever stale clauses exist; click the link to filter to them directly.</p>
+      <p>Cards with an orange left border have a <strong>stale embedding</strong> — the clause text has changed since the embedding was last generated. Stale clauses are excluded from semantic (vector) search until regenerated.</p>
     </div>
     <div class="help-section">
       <h3>Approval Workflow</h3>
@@ -64,7 +54,7 @@
         <li><strong>Submit for Approval</strong> — queues the change in Pending. The live clause is unchanged until approved.</li>
         <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately, bypassing the two-person rule. Use only when no other admin is available. A warning is recorded in the audit log.</li>
         <li>Deletions always require a second superuser to approve — self-approve is disabled for deletes.</li>
-        <li>The <strong>Pending (N)</strong> link in the header turns orange when items are waiting. Superusers can approve or reject from that page.</li>
+        <li>The <strong>Pending</strong> nav item shows an orange badge when items are waiting.</li>
       </ul>
     </div>
     <div class="help-section">
@@ -77,7 +67,7 @@
         <li><strong>⏭ Skipped</strong> — PDF could not be accessed, or clause text was missing</li>
       </ul>
       <p>Verification is <em>advisory only</em> — it informs the approver but never blocks submission or approval.</p>
-      <p>Three source fields are required on every clause: <strong>Citation</strong>, <strong>Page</strong>, and a <strong>Google Drive link</strong> (<code>https://drive.google.com/…</code>). Clauses missing any of these are rejected at submission.</p>
+      <p>Three source fields are required on every clause: <strong>Citation</strong>, <strong>Page</strong>, and a <strong>Google Drive link</strong> (<code>https://drive.google.com/…</code>).</p>
     </div>
     <div class="help-section">
       <h3>Add Clause</h3>
@@ -96,7 +86,7 @@
         <li><code>match_source</code> defaults to <code>CSV Import</code> if omitted</li>
         <li>Columns not in the template are rejected; valid rows are inserted even if others in the same file fail</li>
       </ul>
-      <p>All imported clauses start with <strong>stale embeddings</strong> and will not appear in semantic search until regenerated. The yellow stale banner will appear after import as a reminder.</p>
+      <p>All imported clauses start with <strong>stale embeddings</strong> and will not appear in semantic search until regenerated.</p>
     </div>
     {% endif %}
     {% if is_superuser %}
@@ -111,7 +101,6 @@
       <ul>
         <li>Editing <code>clause_text</code> or <code>plain_summary</code> marks the embedding stale when the edit is approved and applied.</li>
         <li>Stale clauses are excluded from vector search results until regenerated.</li>
-        <li>The yellow banner at the top of the page shows how many stale embeddings exist and links to a filtered view.</li>
         <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it. No approval required — takes effect immediately.</li>
         <li>Model in use: <code>{{ embedding_model }}</code></li>
       </ul>
@@ -123,11 +112,11 @@
     </div>
     <div class="help-section">
       <h3>Audit Log</h3>
-      <p>Every action is recorded — clause adds, edits, deletes, approvals, rejections, embedding regenerations, user changes, password resets, and CSV imports. Accessible via the <strong>Audit Log</strong> link in the header (superusers only). Filter by user, action type, or date range. All timestamps are displayed in UTC.</p>
+      <p>Every action is recorded — clause adds, edits, deletes, approvals, rejections, embedding regenerations, user changes, password resets, and CSV imports. Accessible via <strong>Audit Log</strong> in the sidebar (superusers only). Filter by user, action type, or date range. All timestamps are displayed in UTC.</p>
     </div>
     <div class="help-section">
       <h3>User Management</h3>
-      <p>Accessible via the <strong>Users</strong> link in the header.</p>
+      <p>Accessible via the <strong>Users</strong> link in the sidebar.</p>
       <ul>
         <li><strong>Superusers</strong> — can add, deactivate, delete, and reset passwords for other users. Superuser status cannot be granted or removed from the UI.</li>
         <li><strong>All users</strong> — can change their own password from the Users page via <strong>Change Password</strong>.</li>
@@ -139,10 +128,10 @@
 </details>
 
 {# ── Main Grid ── #}
-<section class="grid">
+<div class="grid-2col">
 
   {# ── Sidebar ── #}
-  <aside class="stack">
+  <div class="col-stack">
 
     {# Browse #}
     <div class="panel">
@@ -284,10 +273,10 @@
       </form>
     </div>
 
-  </aside>
+  </div>
 
   {# ── Main Content ── #}
-  <section class="stack">
+  <div class="stack">
 
     {# Clauses list #}
     <div class="panel">
@@ -301,13 +290,6 @@
           {% if next_url %}<a href="{{ next_url }}"><button type="button" class="secondary">Next</button></a>{% endif %}
         </div>
       </div>
-
-      {% if stale_count > 0 and not filters.stale %}
-      <div class="stale-banner">
-        <span>⚠️ <strong>{{ stale_count }} clause{% if stale_count != 1 %}s{% endif %}</strong> have stale embeddings — they may not appear correctly in search results.</span>
-        <a href="{{ url_for('admin_home') }}?stale=1">View Stale Clauses</a>
-      </div>
-      {% endif %}
 
       {% if filters.stale %}
       <div style="margin-bottom:12px;">
@@ -323,36 +305,37 @@
 
             {# Always-visible header #}
             <div class="clause-head">
-              <div>
-                <strong>{{ clause.citation or clause.clause_id or clause.id }}</strong>{% if clause.embedding_stale %}<span class="badge-stale-inline">⚠️ Stale</span>{% endif %}
-                <div class="clause-meta">
-                  {{ clause.document or "No document" }}
-                  {% if clause.page %}&bull; p.{{ clause.page }}{% endif %}
-                  {% if clause.created_at %}&bull; {{ clause.created_at[:10] }}{% endif %}
-                </div>
-                <div class="pill-row">
-                  <span class="pill">{{ clause.clause_id or "no id" }}</span>
-                  <span class="pill">prec.&nbsp;{{ clause.precedence_level if clause.precedence_level is not none else "—" }}</span>
-                  {% if clause.embedding_stale %}
-                    <span class="pill stale embedding-status-pill">embedding stale</span>
-                  {% else %}
-                    <span class="pill ok embedding-status-pill">embedding ok</span>
-                  {% endif %}
-                  {% for tag in (clause.tags or []) %}
-                    <span class="pill">{{ tag }}</span>
-                  {% endfor %}
-                </div>
-              </div>
-              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
-                <span class="clause-meta" style="white-space:nowrap; font-size:0.78rem; opacity:0.6;">{{ clause.id[:8] }}…</span>
-                {% if clause.status == 'pending' %}
-                  <span class="pill stale" style="font-size:0.76rem;">⏳ Pending Approval</span>
-                {% endif %}
-                {% if clause.link %}
-                  <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
+              {% if clause.status == 'pending' %}
+                <span class="status-dot pending"></span>
+              {% else %}
+                <span class="status-dot approved"></span>
+              {% endif %}
+              <span class="clause-id-badge">{{ clause.clause_id or clause.id }}</span>
+              {% if clause.embedding_stale %}<span class="badge-stale-inline">⚠️ Stale</span>{% endif %}
+              <span class="clause-doc">{{ clause.document or "No document" }}{% if clause.page %} &bull; p.{{ clause.page }}{% endif %}</span>
+              {% if clause.link %}
+                <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
+              {% else %}
+                <span class="badge-no-source">⚠ No Source</span>
+              {% endif %}
+            </div>
+
+            {# Pill row #}
+            <div style="padding: 8px 14px 0;">
+              <div class="pill-row">
+                <span class="pill">{{ clause.citation or "no citation" }}</span>
+                <span class="pill">prec.&nbsp;{{ clause.precedence_level if clause.precedence_level is not none else "—" }}</span>
+                {% if clause.embedding_stale %}
+                  <span class="pill stale embedding-status-pill">embedding stale</span>
                 {% else %}
-                  <span class="badge-no-source">⚠ No Source</span>
+                  <span class="pill ok embedding-status-pill">embedding ok</span>
                 {% endif %}
+                {% if clause.status == 'pending' %}
+                  <span class="pill stale">⏳ Pending Approval</span>
+                {% endif %}
+                {% for tag in (clause.tags or []) %}
+                  <span class="pill">{{ tag }}</span>
+                {% endfor %}
               </div>
             </div>
 
@@ -404,21 +387,21 @@
                     <textarea name="clause_text">{{ clause.clause_text or '' }}</textarea>
                   </div>
                   <div class="button-row" style="align-items:center;">
-                    <button type="submit" name="self_approve" value="" style="flex:0 0 auto;">Submit for Approval</button>
+                    <button type="submit" name="self_approve" value="" class="ghost green" style="flex:0 0 auto;">Submit for Approval</button>
                     {% if is_superuser %}
-                    <button type="submit" name="self_approve" value="1" class="warn" style="flex:0 0 auto;">⚠ Self-approve</button>
+                    <button type="submit" name="self_approve" value="1" class="ghost amber" style="flex:0 0 auto;">⚠ Self-approve</button>
                     {% endif %}
                     <div class="inline-feedback"></div>
                   </div>
                 </form>
 
-                <div class="button-row" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--line);">
+                <div class="clause-actions" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
                   <form method="post" action="{{ url_for('regenerate_clause_embedding', clause_id=clause.id) }}">
-                    <button class="warn" type="submit">Regenerate Embedding</button>
+                    <button class="ghost amber" type="submit">Regenerate Embedding</button>
                   </form>
                   <form method="post" action="{{ url_for('delete_clause', clause_id=clause.id) }}"
                         onsubmit="return confirm('Submit this clause for deletion?\n\nA second superuser must approve before it is removed.');">
-                    <button class="danger" type="submit">Delete Clause</button>
+                    <button class="ghost red" type="submit">Delete Clause</button>
                   </form>
                 </div>
               </div>
@@ -479,8 +462,8 @@
       </div>
     {% endif %}
 
-  </section>
-</section>
+  </div>
+</div>
 
 <script>
 (function () {
