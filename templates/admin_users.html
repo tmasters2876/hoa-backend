@@ -1,5 +1,11 @@
 {% extends "admin_base.html" %}
 
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Users &amp; Access</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <style>
   .reset-pw-details > summary {
@@ -25,9 +31,9 @@
   .reset-pw-form input { font-size: 0.88rem; padding: 7px 10px; }
 </style>
 
-<section class="grid">
+<div class="grid-2col">
 
-  <aside class="stack">
+  <div class="col-stack">
 
     <div class="panel">
       <a href="{{ url_for('admin_home') }}" style="font-size:0.92rem;">&larr; Back to Clauses</a>
@@ -51,9 +57,9 @@
     </div>
     {% endif %}
 
-  </aside>
+  </div>
 
-  <section class="stack">
+  <div class="col-stack">
 
     <details class="panel collapsible-panel">
       <summary>Change My Password</summary>
@@ -218,8 +224,8 @@
     </div>
     {% endif %}
 
-  </section>
-</section>
+  </div>
+</div>
 
 <script>
 (function () {
