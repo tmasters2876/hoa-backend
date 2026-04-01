@@ -181,3 +181,4 @@ tx_chapter_202.csv
 tx_chapter_209.csv
 tx_chapter_207.csv
 fix_tags_supabase.py
+delete_stub_clauses.py

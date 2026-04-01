@@ -84,7 +84,7 @@ def _clear_login_attempts(key: str):
         _login_attempts.pop(key, None)
 
 
-SUPERUSERS = {'tmasters', 'cmasters'}
+SUPERUSERS = {'tmasters', 'cmasters', 'admin'}
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
