@@ -231,7 +231,7 @@
           <select id="flag-status-select" name="status" onchange="toggleResolutionNotes(this)">
             <option value="open" {% if flag.status == 'open' %}selected{% endif %}>Open</option>
             <option value="in_review" {% if flag.status == 'in_review' %}selected{% endif %}>In Review</option>
-            {% if is_superuser %}
+            {% if is_superuser or is_approver %}
             <option value="closed_no_change" {% if flag.status == 'closed_no_change' %}selected{% endif %}>Closed — No Change</option>
             <option value="closed_changed" {% if flag.status == 'closed_changed' %}selected{% endif %}>Closed — Changed</option>
             <option value="closed_deferred" {% if flag.status == 'closed_deferred' %}selected{% endif %}>Closed — Deferred</option>

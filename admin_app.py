@@ -88,13 +88,32 @@ def _clear_login_attempts(key: str):
 SUPERUSERS = {'tmasters', 'cmasters', 'admin'}
 
 
+def _is_approver(username: str) -> bool:
+    """Return True if the user has is_approver=True in admin_users."""
+    if not username:
+        return False
+    try:
+        result = (
+            supabase()
+            .from_("admin_users")
+            .select("is_approver")
+            .eq("username", username)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return bool(rows[0].get("is_approver")) if rows else False
+    except Exception:
+        return False
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def lookup_and_verify_user(username: str, password: str) -> dict | None:
     result = (
         supabase()
         .from_("admin_users")
-        .select("id,username,password_hash,is_active,must_change_password")
+        .select("id,username,password_hash,is_active,must_change_password,is_approver")
         .eq("username", username.lower())
         .limit(1)
         .execute()
@@ -336,8 +355,12 @@ def inject_superuser():
             open_flags_count = r2.count or 0
         except Exception:
             pass
+    username = session.get("username")
+    is_sup = username in SUPERUSERS
+    is_app = (not is_sup) and bool(_is_approver(username)) if username else False
     return {
-        "is_superuser": session.get("username") in SUPERUSERS,
+        "is_superuser": is_sup,
+        "is_approver": is_app,
         "pending_count": pending_count,
         "open_flags_count": open_flags_count,
     }
@@ -1188,7 +1211,7 @@ def admin_users():
     result = (
         supabase()
         .from_("admin_users")
-        .select("id,username,is_active,created_at,must_change_password")
+        .select("id,username,is_active,created_at,must_change_password,is_approver")
         .order("created_at")
         .execute()
     )
@@ -1263,6 +1286,7 @@ def create_user():
             "username": username,
             "password_hash": password_hash,
             "must_change_password": True,
+            "is_approver": bool(request.form.get("is_approver")),
         }).execute()
         log_audit_event(action="user_added", new_value=username)
         flash(f"User '{username}' created.", "success")
@@ -1326,6 +1350,33 @@ def delete_user(user_id: str):
     supabase().from_("admin_users").delete().eq("id", user_id).execute()
     log_audit_event(action="user_deleted", new_value=username)
     flash(f"User '{username}' deleted.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.post("/admin/users/<user_id>/toggle-approver")
+@superuser_required
+def toggle_approver(user_id: str):
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("username,is_approver")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    user = rows[0]
+    if user["username"] in SUPERUSERS:
+        flash("Cannot change approver status for superusers.", "error")
+        return redirect(url_for("admin_users"))
+    new_status = not bool(user.get("is_approver"))
+    supabase().from_("admin_users").update({"is_approver": new_status}).eq("id", user_id).execute()
+    verb = "granted" if new_status else "revoked"
+    log_audit_event(action="approver_role_updated", new_value=f"{user['username']} {verb}")
+    flash(f"Approver role {verb} for '{user['username']}'.", "success")
     return redirect(url_for("admin_users"))
 
 
@@ -1838,8 +1889,10 @@ def update_flag_status(flag_id: str):
         return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
     closing_statuses = {"closed_no_change", "closed_changed", "closed_deferred"}
-    if new_status in closing_statuses and session.get("username") not in SUPERUSERS:
-        flash("Only superusers can close flags.", "error")
+    username = session.get("username")
+    can_close = username in SUPERUSERS or _is_approver(username)
+    if new_status in closing_statuses and not can_close:
+        flash("You do not have permission to close flags.", "error")
         return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
     update_payload = {
