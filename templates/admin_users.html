@@ -143,7 +143,7 @@
                         {{ 'Deactivate' if user.is_active else 'Activate' }}
                       </button>
                     </form>
-                    {% if user.username not in ['tmasters', 'cmasters'] %}
+                    {% if not user.is_superuser %}
                     <form method="post" action="{{ url_for('toggle_approver', user_id=user.id) }}">
                       <button class="secondary" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">
                         {{ 'Revoke Approver' if user.is_approver else 'Grant Approver' }}

@@ -1260,6 +1260,9 @@ def admin_users():
         except Exception as e:
             print(f"[activity] WARNING: failed to fetch activity log: {e}")
 
+    for user in users:
+        user["is_superuser"] = user["username"] in SUPERUSERS
+
     return render_template(
         "admin_users.html",
         users=users,
