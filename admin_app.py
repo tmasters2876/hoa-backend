@@ -51,6 +51,7 @@ PAGE_SIZE = 25
 AUDIT_PAGE_SIZE = 50
 PENDING_PAGE_SIZE = 25
 ACTIVITY_PAGE_SIZE = 25
+FLAG_PAGE_SIZE = 25
 
 # ── Brute force protection ────────────────────────────────────────────────────
 _login_attempts: dict[str, list] = {}
@@ -311,6 +312,7 @@ def index_redirect():
 @app.context_processor
 def inject_superuser():
     pending_count = 0
+    open_flags_count = 0
     if session.get("logged_in"):
         try:
             r = (
@@ -323,9 +325,21 @@ def inject_superuser():
             pending_count = r.count or 0
         except Exception:
             pass
+        try:
+            r2 = (
+                supabase()
+                .from_("clause_flags")
+                .select("id", count="exact")
+                .eq("status", "open")
+                .execute()
+            )
+            open_flags_count = r2.count or 0
+        except Exception:
+            pass
     return {
         "is_superuser": session.get("username") in SUPERUSERS,
         "pending_count": pending_count,
+        "open_flags_count": open_flags_count,
     }
 
 
@@ -653,6 +667,8 @@ def admin_home():
         for row in search_test["keyword"]:
             row["tags_csv"] = serialize_tags(row.get("tags"))
 
+    flagged_clause_ids = _get_open_flag_clause_ids()
+
     return render_template(
         "admin_index.html",
         clauses=clauses,
@@ -666,6 +682,7 @@ def admin_home():
         search_test=search_test,
         embedding_model=OPENAI_EMBEDDING_MODEL,
         stale_count=stale_count,
+        flagged_clause_ids=flagged_clause_ids,
     )
 
 
@@ -1588,6 +1605,297 @@ def reject_pending(change_id: str):
     )
     flash("Change rejected.", "success")
     return redirect(url_for("admin_pending"))
+
+
+# ── CCR Revision Flags ────────────────────────────────────────────────────────
+
+def _get_open_flag_clause_ids() -> set:
+    """Return set of clause_ids that have an open or in_review flag."""
+    try:
+        result = (
+            supabase()
+            .from_("clause_flags")
+            .select("clause_id")
+            .in_("status", ["open", "in_review"])
+            .eq("flag_type", "clause")
+            .execute()
+        )
+        return {row["clause_id"] for row in (result.data or []) if row.get("clause_id")}
+    except Exception:
+        return set()
+
+
+@app.get("/admin/flags")
+@login_required
+def admin_flags():
+    status_filter = request.args.get("status", "open").strip()
+    flag_type_filter = request.args.get("flag_type", "").strip()
+    page = max(1, to_int_or_none(request.args.get("page")) or 1)
+
+    query = supabase().from_("clause_flags").select("*", count="exact")
+    if status_filter and status_filter != "all":
+        query = query.eq("status", status_filter)
+    if flag_type_filter:
+        query = query.eq("flag_type", flag_type_filter)
+
+    start = (page - 1) * FLAG_PAGE_SIZE
+    end = start + FLAG_PAGE_SIZE - 1
+    result = query.order("created_at", desc=True).range(start, end).execute()
+    flags = result.data or []
+    total_count = result.count or 0
+    total_pages = max(1, math.ceil(total_count / FLAG_PAGE_SIZE))
+
+    # Get comment counts for each flag
+    flag_ids = [f["id"] for f in flags]
+    comment_counts = {}
+    if flag_ids:
+        try:
+            cr = (
+                supabase()
+                .from_("clause_flag_comments")
+                .select("flag_id")
+                .in_("flag_id", flag_ids)
+                .execute()
+            )
+            for row in (cr.data or []):
+                fid = row["flag_id"]
+                comment_counts[fid] = comment_counts.get(fid, 0) + 1
+        except Exception:
+            pass
+
+    for f in flags:
+        f["comment_count"] = comment_counts.get(f["id"], 0)
+
+    # Status counts for stat tiles
+    status_counts = {}
+    try:
+        sc_result = (
+            supabase()
+            .from_("clause_flags")
+            .select("status")
+            .execute()
+        )
+        for row in (sc_result.data or []):
+            s = row.get("status", "")
+            status_counts[s] = status_counts.get(s, 0) + 1
+    except Exception:
+        pass
+
+    query_args = {}
+    if status_filter:
+        query_args["status"] = status_filter
+    if flag_type_filter:
+        query_args["flag_type"] = flag_type_filter
+
+    prev_url = None
+    next_url = None
+    if page > 1:
+        prev_url = url_for("admin_flags") + "?" + urlencode({**query_args, "page": page - 1})
+    if page < total_pages:
+        next_url = url_for("admin_flags") + "?" + urlencode({**query_args, "page": page + 1})
+
+    return render_template(
+        "admin_flags.html",
+        flags=flags,
+        total_count=total_count,
+        total_pages=total_pages,
+        page=page,
+        status_filter=status_filter,
+        flag_type_filter=flag_type_filter,
+        status_counts=status_counts,
+        prev_url=prev_url,
+        next_url=next_url,
+    )
+
+
+@app.get("/admin/flags/<flag_id>")
+@login_required
+def admin_flag_detail(flag_id: str):
+    result = (
+        supabase()
+        .from_("clause_flags")
+        .select("*")
+        .eq("id", flag_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_flags"))
+    flag = rows[0]
+
+    # Load full clause if clause-type flag
+    clause = None
+    if flag.get("flag_type") == "clause" and flag.get("clause_id"):
+        try:
+            cr = (
+                supabase()
+                .from_("clauses")
+                .select(CLAUSE_COLUMNS)
+                .eq("clause_id", flag["clause_id"])
+                .limit(1)
+                .execute()
+            )
+            clause = (cr.data or [None])[0]
+        except Exception:
+            pass
+
+    # Load comments
+    comments_result = (
+        supabase()
+        .from_("clause_flag_comments")
+        .select("*")
+        .eq("flag_id", flag_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    comments = comments_result.data or []
+
+    return render_template(
+        "admin_flag_detail.html",
+        flag=flag,
+        clause=clause,
+        comments=comments,
+    )
+
+
+@app.post("/admin/flags")
+@login_required
+def create_flag():
+    """Create a new clause-type or topic-type flag."""
+    flag_type = request.form.get("flag_type", "clause").strip()
+    flag_notes = request.form.get("flag_notes", "").strip()
+
+    if not flag_notes:
+        return jsonify({"ok": False, "message": "Notes are required when flagging."})
+
+    payload = {
+        "flag_type": flag_type,
+        "flagged_by": session.get("username"),
+        "flag_notes": flag_notes,
+        "status": "open",
+    }
+
+    if flag_type == "clause":
+        clause_id = request.form.get("clause_id", "").strip()
+        if not clause_id:
+            return jsonify({"ok": False, "message": "clause_id is required for clause flags."})
+        payload["clause_id"] = clause_id
+
+    elif flag_type == "topic":
+        payload["question_text"] = request.form.get("question_text", "").strip()
+        payload["answer_snapshot"] = request.form.get("answer_snapshot", "").strip()
+        cited_raw = request.form.get("cited_clause_ids", "")
+        if cited_raw:
+            payload["cited_clause_ids"] = [c.strip() for c in cited_raw.split(",") if c.strip()]
+
+    try:
+        result = supabase().from_("clause_flags").insert(payload).execute()
+        new_flag = (result.data or [{}])[0]
+        log_audit_event(
+            action="flag_created",
+            clause_id=payload.get("clause_id"),
+            notes=f"flag_type={flag_type}; {flag_notes[:100]}",
+        )
+        return jsonify({"ok": True, "message": "Flagged for revision.", "flag_id": new_flag.get("id")})
+    except Exception as e:
+        print(f"[flags] ERROR creating flag: {e}")
+        return jsonify({"ok": False, "message": "Failed to create flag."})
+
+
+@app.post("/admin/flags/<flag_id>/comment")
+@login_required
+def add_flag_comment(flag_id: str):
+    comment = request.form.get("comment", "").strip()
+    if not comment:
+        flash("Comment cannot be empty.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+    supabase().from_("clause_flag_comments").insert({
+        "flag_id": flag_id,
+        "author": session.get("username"),
+        "comment": comment,
+    }).execute()
+
+    supabase().from_("clause_flags").update(
+        {"updated_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", flag_id).execute()
+
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#comments")
+
+
+@app.post("/admin/flags/<flag_id>/status")
+@login_required
+def update_flag_status(flag_id: str):
+    """Update flag status. Only superusers can close a flag."""
+    new_status = request.form.get("status", "").strip()
+    resolution_notes = request.form.get("resolution_notes", "").strip()
+
+    valid_statuses = ["open", "in_review", "closed_no_change", "closed_changed", "closed_deferred"]
+    if new_status not in valid_statuses:
+        flash("Invalid status.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+    closing_statuses = {"closed_no_change", "closed_changed", "closed_deferred"}
+    if new_status in closing_statuses and session.get("username") not in SUPERUSERS:
+        flash("Only superusers can close flags.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+    update_payload = {
+        "status": new_status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if new_status in closing_statuses:
+        update_payload["closed_by"] = session.get("username")
+        update_payload["resolution_notes"] = resolution_notes or None
+
+    supabase().from_("clause_flags").update(update_payload).eq("id", flag_id).execute()
+
+    log_audit_event(
+        action="flag_status_updated",
+        notes=f"flag_id={flag_id}; new_status={new_status}",
+    )
+
+    flash(f"Flag status updated to {new_status.replace('_', ' ')}.", "success")
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+
+@app.get("/admin/search")
+@login_required
+def admin_search():
+    question = request.args.get("q", "").strip()
+    result = None
+    if question:
+        from ask_gpt import fetch_matching_clauses, format_clauses_for_prompt, build_gpt_prompt
+        from services import get_openai_client
+
+        clauses = fetch_matching_clauses(question)
+        cited_clause_ids = [c.get("clause_id") or c.get("id") for c in clauses if c.get("clause_id") or c.get("id")]
+        clause_text = format_clauses_for_prompt(clauses)
+        prompt = build_gpt_prompt(question, clause_text, no_matches=not clauses)
+
+        oc = get_openai_client()
+        gpt_resp = oc.chat.completions.create(
+            model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o"),
+            messages=[
+                {"role": "system", "content": "You are an expert HOA assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
+        answer = gpt_resp.choices[0].message.content
+
+        result = {
+            "question": question,
+            "answer": answer,
+            "clauses": clauses,
+            "cited_clause_ids": cited_clause_ids,
+        }
+
+    flagged_clause_ids = _get_open_flag_clause_ids()
+    return render_template("admin_search.html", question=question, result=result,
+                           flagged_clause_ids=flagged_clause_ids)
 
 
 if __name__ == "__main__":

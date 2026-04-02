@@ -1,0 +1,206 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Revision Flags</span>
+  {% if total_count is defined %}
+  <span class="topbar-sub">{{ total_count }} flag{{ 's' if total_count != 1 else '' }}</span>
+  {% endif %}
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
+</div>
+{% endblock %}
+
+{% block stat_tiles %}
+<div class="stat-row">
+  <div class="stat-tile {% if status_counts.get('open', 0) > 0 %}warn{% endif %}">
+    <div class="stat-label">Open</div>
+    <div class="stat-num">{{ status_counts.get('open', 0) }}</div>
+    <div class="stat-sub">needs attention</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-label">In Review</div>
+    <div class="stat-num">{{ status_counts.get('in_review', 0) }}</div>
+    <div class="stat-sub">being evaluated</div>
+  </div>
+  <div class="stat-tile ok">
+    <div class="stat-label">Closed</div>
+    <div class="stat-num">{{ (status_counts.get('closed_no_change', 0) + status_counts.get('closed_changed', 0) + status_counts.get('closed_deferred', 0)) }}</div>
+    <div class="stat-sub">resolved (all time)</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .flags-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .flags-table th,
+  .flags-table td {
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+    padding: 9px 12px;
+  }
+  .flags-table th {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    white-space: nowrap;
+    background: var(--surface-2);
+  }
+  .flags-table td.mono {
+    font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .flag-status-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .flag-status-badge.open        { background: var(--accent-2-light); color: #7a5200; }
+  .flag-status-badge.in_review   { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
+  .flag-status-badge.closed_no_change,
+  .flag-status-badge.closed_changed,
+  .flag-status-badge.closed_deferred { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .flag-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+  .flag-type-badge.clause { background: var(--accent-light); color: var(--accent); }
+  .flag-type-badge.topic  { background: rgba(163,45,45,0.08); color: var(--danger); }
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .filter-bar .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+  }
+  .filter-bar label { font-size: 12px; font-weight: 600; margin-bottom: 0; }
+  .filter-bar select { font-size: 13px; padding: 7px 10px; border-radius: var(--radius-md); }
+  .filter-bar button { width: auto; padding: 8px 20px; font-size: 13px; align-self: flex-end; }
+</style>
+
+<div class="stack">
+
+  <div class="panel">
+    <form method="get" action="{{ url_for('admin_flags') }}" class="filter-bar">
+      <div class="field">
+        <label for="f-status">Status</label>
+        <select id="f-status" name="status">
+          <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All statuses</option>
+          <option value="open" {% if status_filter == 'open' %}selected{% endif %}>Open</option>
+          <option value="in_review" {% if status_filter == 'in_review' %}selected{% endif %}>In Review</option>
+          <option value="closed_no_change" {% if status_filter == 'closed_no_change' %}selected{% endif %}>Closed — No Change</option>
+          <option value="closed_changed" {% if status_filter == 'closed_changed' %}selected{% endif %}>Closed — Changed</option>
+          <option value="closed_deferred" {% if status_filter == 'closed_deferred' %}selected{% endif %}>Closed — Deferred</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-type">Flag Type</label>
+        <select id="f-type" name="flag_type">
+          <option value="" {% if not flag_type_filter %}selected{% endif %}>All types</option>
+          <option value="clause" {% if flag_type_filter == 'clause' %}selected{% endif %}>Clause</option>
+          <option value="topic" {% if flag_type_filter == 'topic' %}selected{% endif %}>Topic</option>
+        </select>
+      </div>
+      <button type="submit">Filter</button>
+      {% if status_filter and status_filter != 'open' or flag_type_filter %}
+      <a href="{{ url_for('admin_flags') }}" style="align-self:flex-end; font-size:0.88rem; padding-bottom:9px;">Reset</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="panel">
+    <p class="muted" style="margin:0 0 12px;">
+      {{ total_count }} flag{% if total_count != 1 %}s{% endif %} —
+      page {{ page }} of {{ total_pages }}
+    </p>
+
+    {% if flags %}
+    <div style="overflow-x: auto;">
+      <table class="flags-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Reference</th>
+            <th>Notes</th>
+            <th>Flagged By</th>
+            <th>Date</th>
+            <th>Comments</th>
+            <th>Status</th>
+            <th>View</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for flag in flags %}
+          <tr>
+            <td>
+              <span class="flag-type-badge {{ flag.flag_type }}">{{ flag.flag_type }}</span>
+            </td>
+            <td style="font-size:12px; max-width:160px; word-break:break-word;">
+              {% if flag.flag_type == 'clause' %}
+                <span style="font-family:ui-monospace,'Fira Mono',monospace; color:var(--muted);">{{ flag.clause_id or '—' }}</span>
+              {% else %}
+                <span class="muted">{{ (flag.question_text or '')[:80] }}{% if flag.question_text and flag.question_text|length > 80 %}…{% endif %}</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12px; max-width:240px; word-break:break-word;">
+              {{ (flag.flag_notes or '')[:120] }}{% if flag.flag_notes and flag.flag_notes|length > 120 %}…{% endif %}
+            </td>
+            <td class="mono">{{ flag.flagged_by or '—' }}</td>
+            <td class="mono">{{ flag.created_at[:10] if flag.created_at else '—' }}</td>
+            <td style="text-align:center;">
+              {% if flag.comment_count > 0 %}
+                <span style="font-size:12px; font-weight:600; color:var(--accent);">{{ flag.comment_count }}</span>
+              {% else %}
+                <span class="muted" style="font-size:12px;">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="flag-status-badge {{ flag.status }}">{{ flag.status | replace('_', ' ') }}</span>
+            </td>
+            <td>
+              <a href="{{ url_for('admin_flag_detail', flag_id=flag.id) }}"
+                 class="btn-view-source" style="white-space:nowrap;">View →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination">
+      {% if prev_url %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="muted">&larr; Prev</span>{% endif %}
+      <span class="muted">{{ page }} / {{ total_pages }}</span>
+      {% if next_url %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="muted">Next &rarr;</span>{% endif %}
+    </div>
+
+    {% else %}
+    <p class="muted">No flags match the current filters.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

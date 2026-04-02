@@ -31,6 +31,13 @@
     <div class="stat-num">{{ pending_count }}</div>
     <div class="stat-sub">awaiting second admin</div>
   </div>
+  <a href="{{ url_for('admin_flags') }}" style="text-decoration:none;">
+    <div class="stat-tile {% if open_flags_count > 0 %}warn{% endif %}">
+      <div class="stat-label">Open Revision Flags</div>
+      <div class="stat-num">{{ open_flags_count }}</div>
+      <div class="stat-sub">awaiting committee review</div>
+    </div>
+  </a>
 </div>
 {% endblock %}
 
@@ -109,6 +116,28 @@
       <h3>Search Test</h3>
       <p>Runs a live query using the same logic as the production chatbot — both semantic (vector) and keyword searches execute simultaneously against the Supabase <code>match_clauses</code> RPC. Results are displayed in two columns: <strong>Vector Matches</strong> and <strong>Keyword Matches</strong>.</p>
       <p>Use this to verify a question surfaces the expected clauses before testing in the resident-facing frontend. Only approved clauses with valid embeddings appear in vector results.</p>
+      <p>Each result row includes a <strong>Flag</strong> button — use it to flag a specific clause for revision directly from search results without leaving this page.</p>
+    </div>
+    <div class="help-section">
+      <h3>Admin Search</h3>
+      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query using the same vector + keyword logic as the resident-facing Carrd chatbot — but with flagging capability built in.</p>
+      <ul>
+        <li>The GPT answer is displayed at the top, followed by the cited clause cards that informed it.</li>
+        <li>Each cited clause card has a <strong>Flag for Revision</strong> button to flag that specific clause.</li>
+        <li><strong>Flag this topic</strong> at the top of results captures the entire question, GPT answer, and all cited clause IDs as a single topic-level flag — useful when the concern is about a policy area rather than one specific clause.</li>
+      </ul>
+    </div>
+    <div class="help-section">
+      <h3>Revision Flags</h3>
+      <p>Available via <strong>Revision Flags</strong> in the sidebar. A deliberation tool for the CCR revision committee — flags do not change any clause data. The existing edit and approval workflow is downstream of this process.</p>
+      <ul>
+        <li><strong>Clause flag</strong> — marks a specific clause for revision discussion. Triggered from the clause browse list, the Search Test results, or the Admin Search cited clause cards. The 🏳 Flag button on a clause card turns to 🚩 Flagged once an open flag exists.</li>
+        <li><strong>Topic flag</strong> — captures a full Q&amp;A result (question, GPT answer, and cited clause IDs) when the concern spans multiple clauses or a broader policy area.</li>
+        <li>Any logged-in user can create flags and add comments. Only superusers can close a flag.</li>
+        <li>Statuses: <strong>Open</strong> → <strong>In Review</strong> → closed as <strong>No Change</strong>, <strong>Changed</strong>, or <strong>Deferred</strong>.</li>
+        <li>The flag detail page shows the full clause or topic snapshot, original flag notes, a threaded comment history, and status management. Comments are permanent — they cannot be edited or deleted.</li>
+        <li>The <strong>Revision Flags</strong> nav item shows an orange badge when open flags exist.</li>
+      </ul>
     </div>
     <div class="help-section">
       <h3>Audit Log</h3>
@@ -318,6 +347,21 @@
               {% else %}
                 <span class="badge-no-source">⚠ No Source</span>
               {% endif %}
+              {% if clause.clause_id and clause.clause_id in flagged_clause_ids %}
+                <a href="{{ url_for('admin_flags') }}?status=open"
+                   class="btn-flag-active" title="This clause has an open revision flag">
+                  🚩 Flagged
+                </a>
+              {% else %}
+                <button type="button"
+                        class="btn-flag"
+                        data-clause-id="{{ clause.clause_id }}"
+                        data-citation="{{ clause.citation or clause.clause_id }}"
+                        onclick="openFlagModal(this)"
+                        title="Flag this clause for revision">
+                  🏳 Flag
+                </button>
+              {% endif %}
             </div>
 
             {# Pill row #}
@@ -424,7 +468,7 @@
             <h3>Vector Matches</h3>
             <table class="result-table">
               <thead>
-                <tr><th>Citation</th><th>Document</th><th>Summary</th></tr>
+                <tr><th>Citation</th><th>Document</th><th>Summary</th><th>Flag</th></tr>
               </thead>
               <tbody>
                 {% for row in search_test.vector %}
@@ -432,9 +476,15 @@
                     <td>{{ row.citation or row.clause_id or row.id }}</td>
                     <td>{{ row.document or '' }}</td>
                     <td>{{ row.plain_summary or row.clause_text or '' }}</td>
+                    <td>
+                      <button type="button" class="btn-flag ghost green"
+                              data-clause-id="{{ row.clause_id or row.id }}"
+                              data-citation="{{ row.citation or row.clause_id or row.id }}"
+                              onclick="openFlagModal(this)">Flag</button>
+                    </td>
                   </tr>
                 {% else %}
-                  <tr><td colspan="3" class="muted">No vector matches returned.</td></tr>
+                  <tr><td colspan="4" class="muted">No vector matches returned.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -443,7 +493,7 @@
             <h3>Keyword Matches</h3>
             <table class="result-table">
               <thead>
-                <tr><th>Citation</th><th>Document</th><th>Summary</th></tr>
+                <tr><th>Citation</th><th>Document</th><th>Summary</th><th>Flag</th></tr>
               </thead>
               <tbody>
                 {% for row in search_test.keyword %}
@@ -451,9 +501,15 @@
                     <td>{{ row.citation or row.clause_id or row.id }}</td>
                     <td>{{ row.document or '' }}</td>
                     <td>{{ row.plain_summary or row.clause_text or '' }}</td>
+                    <td>
+                      <button type="button" class="btn-flag ghost green"
+                              data-clause-id="{{ row.clause_id or row.id }}"
+                              data-citation="{{ row.citation or row.clause_id or row.id }}"
+                              onclick="openFlagModal(this)">Flag</button>
+                    </td>
                   </tr>
                 {% else %}
-                  <tr><td colspan="3" class="muted">No keyword matches returned.</td></tr>
+                  <tr><td colspan="4" class="muted">No keyword matches returned.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -509,6 +565,91 @@
       });
   });
 })();
+</script>
+
+{# Flag Modal #}
+<div id="flagModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:500; align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border-radius:var(--radius-lg); padding:24px; width:480px; max-width:92vw; box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <h2 style="margin:0 0 4px; font-size:15px;">Flag for Revision</h2>
+    <p id="flagModalSubtitle" class="muted" style="margin:0 0 16px; font-size:12px;"></p>
+    <input type="hidden" id="flagModalClauseId">
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Notes <span class="req">*</span></label>
+      <textarea id="flagModalNotes" rows="4"
+                style="width:100%; resize:vertical;"
+                placeholder="Describe what you think should be revised or reconsidered..."></textarea>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button type="button" class="secondary" style="width:auto;" onclick="closeFlagModal()">Cancel</button>
+      <button type="button" id="flagModalSubmit" style="width:auto;" onclick="submitFlagModal()">Submit Flag</button>
+    </div>
+    <div id="flagModalFeedback" style="margin-top:10px; font-size:12px; min-height:1.2em;"></div>
+  </div>
+</div>
+
+<script>
+function openFlagModal(btn) {
+  var clauseId = btn.getAttribute('data-clause-id');
+  var citation = btn.getAttribute('data-citation');
+  document.getElementById('flagModalClauseId').value = clauseId;
+  document.getElementById('flagModalSubtitle').textContent = citation;
+  document.getElementById('flagModalNotes').value = '';
+  document.getElementById('flagModalFeedback').textContent = '';
+  var modal = document.getElementById('flagModal');
+  modal.style.display = 'flex';
+  setTimeout(function() { document.getElementById('flagModalNotes').focus(); }, 50);
+}
+
+function closeFlagModal() {
+  document.getElementById('flagModal').style.display = 'none';
+}
+
+document.getElementById('flagModal').addEventListener('click', function(e) {
+  if (e.target === this) closeFlagModal();
+});
+
+function submitFlagModal() {
+  var clauseId = document.getElementById('flagModalClauseId').value;
+  var notes = document.getElementById('flagModalNotes').value.trim();
+  var feedback = document.getElementById('flagModalFeedback');
+  var btn = document.getElementById('flagModalSubmit');
+
+  if (!notes) {
+    feedback.textContent = 'Notes are required.';
+    feedback.style.color = 'var(--danger)';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Submitting\u2026';
+  feedback.textContent = '';
+
+  var fd = new FormData();
+  fd.append('flag_type', 'clause');
+  fd.append('clause_id', clauseId);
+  fd.append('flag_notes', notes);
+
+  fetch('/admin/flags', { method: 'POST', body: fd })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      btn.textContent = 'Submit Flag';
+      if (data.ok) {
+        feedback.textContent = '\u2713 Flagged successfully.';
+        feedback.style.color = 'var(--accent)';
+        setTimeout(closeFlagModal, 1200);
+      } else {
+        feedback.textContent = data.message || 'Failed to flag.';
+        feedback.style.color = 'var(--danger)';
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = 'Submit Flag';
+      feedback.textContent = 'Request failed \u2014 try again.';
+      feedback.style.color = 'var(--danger)';
+    });
+}
 </script>
 
 {% endblock %}

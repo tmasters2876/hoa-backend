@@ -693,6 +693,23 @@
         vertical-align: middle; margin-left: 6px;
       }
 
+      .btn-flag {
+        font-size: 11px; font-weight: 600; white-space: nowrap;
+        padding: 3px 10px; border-radius: var(--radius-pill);
+        background: transparent; color: var(--muted);
+        border: 1px solid var(--border-strong);
+        cursor: pointer; line-height: 1.4; width: auto;
+      }
+      .btn-flag:hover { background: var(--accent-2-light); color: #7a5200; border-color: var(--accent-2-border); opacity: 1; }
+      .btn-flag-active {
+        font-size: 11px; font-weight: 600; white-space: nowrap;
+        padding: 3px 10px; border-radius: var(--radius-pill);
+        background: var(--accent-2-light); color: #7a5200;
+        border: 1px solid var(--accent-2-border);
+        text-decoration: none; display: inline-block; line-height: 1.4;
+      }
+      .btn-flag-active:hover { opacity: 0.85; text-decoration: none; }
+
       .btn-view-source {
         display: inline-block;
         font-size: 11px; font-weight: 600; white-space: nowrap;
@@ -879,6 +896,26 @@
               <rect x="9" y="9" width="6" height="6" rx="1"/>
             </svg>
             Clauses
+          </a>
+
+          <a href="{{ url_for('admin_search') }}"
+             class="nav-item {% if request.endpoint == 'admin_search' %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="6.5" cy="6.5" r="4"/>
+              <path d="M10 10l3.5 3.5"/>
+            </svg>
+            Search
+          </a>
+
+          <a href="{{ url_for('admin_flags') }}"
+             class="nav-item {% if request.endpoint in ['admin_flags', 'admin_flag_detail'] %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 2v12M3 2h8l-2 3.5L11 9H3"/>
+            </svg>
+            Revision Flags
+            {% if open_flags_count > 0 %}
+            <span class="nav-badge">{{ open_flags_count }}</span>
+            {% endif %}
           </a>
 
           {% if is_superuser %}

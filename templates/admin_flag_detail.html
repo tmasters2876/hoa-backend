@@ -1,0 +1,267 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Revision Flag</span>
+  <span class="topbar-sub">{{ flag.flag_type | capitalize }} flag &bull; {{ flag.status | replace('_', ' ') }}</span>
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_flags') }}" style="font-size:12px;font-weight:500;">← Back to Flags</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .flag-status-badge {
+    display: inline-block;
+    padding: 3px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .flag-status-badge.open        { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
+  .flag-status-badge.in_review   { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
+  .flag-status-badge.closed_no_change,
+  .flag-status-badge.closed_changed,
+  .flag-status-badge.closed_deferred { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+
+  .comment-thread { display: flex; flex-direction: column; gap: 12px; }
+  .comment-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .comment-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600;
+    color: #e1f5ee;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .comment-body {
+    flex: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+  }
+  .comment-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 5px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .comment-author { font-weight: 600; color: var(--ink); }
+  .comment-text { font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+
+  .flag-notes-box {
+    background: var(--accent-2-light);
+    border: 1px solid var(--accent-2-border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    color: #4a3200;
+  }
+
+  .status-select-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+  .status-select-row .field {
+    display: flex; flex-direction: column; gap: 4px;
+    min-width: 200px;
+  }
+  .status-select-row label { font-size: 12px; font-weight: 600; margin-bottom: 0; }
+  .status-select-row select { font-size: 13px; padding: 7px 10px; border-radius: var(--radius-md); }
+  .status-select-row button { width: auto; padding: 8px 20px; align-self: flex-end; }
+  #resolutionNotesRow { margin-top: 10px; }
+</style>
+
+<div class="stack">
+
+  {# ── What was flagged ── #}
+  {% if flag.flag_type == 'clause' %}
+    {% if clause %}
+    <div class="panel">
+      <h2 style="margin-bottom:12px; font-size:14px;">Flagged Clause</h2>
+      <div class="clause-card">
+        <div class="clause-head">
+          <span class="status-dot {{ clause.status or 'approved' }}"></span>
+          <span class="clause-id-badge">{{ clause.clause_id or clause.id }}</span>
+          <span class="clause-doc">{{ clause.document or 'No document' }}{% if clause.page %} &bull; p.{{ clause.page }}{% endif %}</span>
+          {% if clause.link %}
+            <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
+          {% endif %}
+        </div>
+        <div class="clause-body">
+          <div class="clause-citation">{{ clause.citation or 'No citation' }}</div>
+          {% if clause.clause_text %}
+          <div class="clause-text-block">{{ clause.clause_text }}</div>
+          {% endif %}
+          {% if clause.plain_summary %}
+          <div class="clause-summary-block">{{ clause.plain_summary }}</div>
+          {% endif %}
+          {% if clause.tags %}
+          <div class="pill-row">
+            {% for tag in clause.tags %}
+              <span class="pill">{{ tag }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="panel">
+      <h2 style="margin-bottom:8px; font-size:14px;">Flagged Clause</h2>
+      <p class="muted">Clause <code>{{ flag.clause_id }}</code> was not found (may have been deleted or the ID changed).</p>
+    </div>
+    {% endif %}
+
+  {% elif flag.flag_type == 'topic' %}
+  <div class="panel">
+    <h2 style="margin-bottom:8px; font-size:14px;">Flagged Topic: Q&amp;A Snapshot</h2>
+    {% if flag.question_text %}
+    <div style="margin-bottom:12px;">
+      <div class="clause-citation" style="margin-bottom:5px;">Question</div>
+      <div class="clause-text-block">{{ flag.question_text }}</div>
+    </div>
+    {% endif %}
+    {% if flag.answer_snapshot %}
+    <div style="margin-bottom:12px;">
+      <div class="clause-citation" style="margin-bottom:5px;">GPT Answer (snapshot)</div>
+      <div style="font-size:13px; line-height:1.6; border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 14px; background:var(--surface-2);">
+        {{ flag.answer_snapshot | safe }}
+      </div>
+    </div>
+    {% endif %}
+    {% if flag.cited_clause_ids %}
+    <div>
+      <div class="clause-citation" style="margin-bottom:6px;">Cited Clauses</div>
+      <div class="pill-row">
+        {% for cid in flag.cited_clause_ids %}
+          <span class="pill">{{ cid }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Flag details ── #}
+  <div class="panel">
+    <h2 style="margin-bottom:12px; font-size:14px;">Flag Details</h2>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:14px;">
+      <div>
+        <div class="clause-citation" style="margin-bottom:3px;">Flagged By</div>
+        <div style="font-size:13px;">{{ flag.flagged_by or '—' }}</div>
+      </div>
+      <div>
+        <div class="clause-citation" style="margin-bottom:3px;">Created</div>
+        <div style="font-size:13px;">{{ flag.created_at[:16].replace('T', ' ') if flag.created_at else '—' }} UTC</div>
+      </div>
+      <div>
+        <div class="clause-citation" style="margin-bottom:3px;">Status</div>
+        <span class="flag-status-badge {{ flag.status }}">{{ flag.status | replace('_', ' ') }}</span>
+      </div>
+      {% if flag.closed_by %}
+      <div>
+        <div class="clause-citation" style="margin-bottom:3px;">Closed By</div>
+        <div style="font-size:13px;">{{ flag.closed_by }}</div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="clause-citation" style="margin-bottom:6px;">Original Notes</div>
+    <div class="flag-notes-box">{{ flag.flag_notes or '—' }}</div>
+    {% if flag.resolution_notes %}
+    <div style="margin-top:12px;">
+      <div class="clause-citation" style="margin-bottom:6px;">Resolution Notes</div>
+      <div style="font-size:13px; line-height:1.55; white-space:pre-wrap; color:var(--muted);">{{ flag.resolution_notes }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Comment thread ── #}
+  <div class="panel" id="comments">
+    <h2 style="margin-bottom:14px; font-size:14px;">Comments</h2>
+    {% if comments %}
+    <div class="comment-thread" style="margin-bottom:20px;">
+      {% for c in comments %}
+      <div class="comment-item">
+        <div class="comment-avatar">{{ (c.author or '?')[:2] }}</div>
+        <div class="comment-body">
+          <div class="comment-meta">
+            <span class="comment-author">{{ c.author or '—' }}</span>
+            <span>{{ c.created_at[:16].replace('T', ' ') if c.created_at else '' }} UTC</span>
+          </div>
+          <div class="comment-text">{{ c.comment }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted" style="margin-bottom:16px;">No comments yet.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('add_flag_comment', flag_id=flag.id) }}" class="stack">
+      <div>
+        <label for="comment">Add a Comment</label>
+        <textarea id="comment" name="comment" rows="3" placeholder="Share your thoughts with the committee…"></textarea>
+      </div>
+      <button type="submit" style="width:auto; align-self:flex-start;">Post Comment</button>
+    </form>
+  </div>
+
+  {# ── Status management ── #}
+  <div class="panel">
+    <h2 style="margin-bottom:12px; font-size:14px;">Update Status</h2>
+    <form method="post" action="{{ url_for('update_flag_status', flag_id=flag.id) }}" class="stack">
+      <div class="status-select-row">
+        <div class="field">
+          <label for="flag-status-select">New Status</label>
+          <select id="flag-status-select" name="status" onchange="toggleResolutionNotes(this)">
+            <option value="open" {% if flag.status == 'open' %}selected{% endif %}>Open</option>
+            <option value="in_review" {% if flag.status == 'in_review' %}selected{% endif %}>In Review</option>
+            {% if is_superuser %}
+            <option value="closed_no_change" {% if flag.status == 'closed_no_change' %}selected{% endif %}>Closed — No Change</option>
+            <option value="closed_changed" {% if flag.status == 'closed_changed' %}selected{% endif %}>Closed — Changed</option>
+            <option value="closed_deferred" {% if flag.status == 'closed_deferred' %}selected{% endif %}>Closed — Deferred</option>
+            {% endif %}
+          </select>
+        </div>
+        <button type="submit">Update Status</button>
+      </div>
+      <div id="resolutionNotesRow" style="display:none;">
+        <label for="resolution-notes">Resolution Notes</label>
+        <textarea id="resolution-notes" name="resolution_notes" rows="3"
+                  placeholder="Describe the outcome or reason for closing…">{{ flag.resolution_notes or '' }}</textarea>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<script>
+var closingStatuses = ['closed_no_change', 'closed_changed', 'closed_deferred'];
+
+function toggleResolutionNotes(sel) {
+  var row = document.getElementById('resolutionNotesRow');
+  row.style.display = closingStatuses.indexOf(sel.value) !== -1 ? 'block' : 'none';
+}
+
+// Show on load if already a closing status
+(function() {
+  var sel = document.getElementById('flag-status-select');
+  if (sel) toggleResolutionNotes(sel);
+})();
+</script>
+{% endblock %}

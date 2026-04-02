@@ -1,0 +1,225 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Search</span>
+  <span class="topbar-sub">GPT Q&amp;A with clause citations</span>
+  <div class="topbar-spacer"></div>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .answer-panel {
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  .answer-panel h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+
+  .flag-status-badge {
+    display: inline-block;
+    padding: 3px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .flag-status-badge.open { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
+  .flag-status-badge.in_review { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
+</style>
+
+<div class="stack">
+
+  {# Search form #}
+  <div class="panel">
+    <h2>Ask a Question</h2>
+    <form method="get" action="{{ url_for('admin_search') }}" class="stack">
+      <div>
+        <label for="q">Question</label>
+        <textarea id="q" name="q" rows="3"
+                  placeholder="Can I build a shed in my backyard?">{{ question }}</textarea>
+      </div>
+      <button type="submit" style="width:auto; align-self:flex-start;">Ask</button>
+    </form>
+  </div>
+
+  {% if result %}
+
+  {# GPT Answer #}
+  <div class="panel answer-panel">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+      <h2 style="margin:0; font-size:14px;">Answer</h2>
+      <button type="button" id="topicFlagBtn" class="btn-flag"
+              onclick="openTopicFlagModal()"
+              title="Flag this entire Q&A topic for revision review">
+        🏳 Flag this Topic
+      </button>
+    </div>
+    <div>{{ result.answer | safe }}</div>
+  </div>
+
+  {# Cited Clauses #}
+  {% if result.clauses %}
+  <div class="panel">
+    <h2 style="margin-bottom:14px; font-size:14px;">Cited Clauses</h2>
+    <div class="clause-list">
+      {% for clause in result.clauses %}
+      <article class="clause-card">
+        <div class="clause-head">
+          <span class="clause-id-badge">{{ clause.clause_id or clause.id or '—' }}</span>
+          <span class="clause-doc">{{ clause.document or 'No document' }}{% if clause.page %} &bull; p.{{ clause.page }}{% endif %}</span>
+          {% if clause.link %}
+            <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
+          {% endif %}
+          {% if (clause.clause_id or clause.id) in flagged_clause_ids %}
+            <a href="{{ url_for('admin_flags') }}?status=open"
+               class="btn-flag-active" title="This clause has an open revision flag">
+              🚩 Flagged
+            </a>
+          {% else %}
+            <button type="button"
+                    class="btn-flag"
+                    data-clause-id="{{ clause.clause_id or clause.id }}"
+                    data-citation="{{ clause.citation or clause.clause_id or clause.id }}"
+                    onclick="openFlagModal(this)"
+                    title="Flag this clause for revision">
+              🏳 Flag for Revision
+            </button>
+          {% endif %}
+        </div>
+        <div class="clause-body">
+          {% if clause.citation %}
+          <div class="clause-citation">{{ clause.citation }}</div>
+          {% endif %}
+          {% if clause.plain_summary %}
+          <div class="clause-summary-block">{{ clause.plain_summary }}</div>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Topic flag modal #}
+  <div id="topicFlagModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:500; align-items:center; justify-content:center;">
+    <div style="background:var(--surface); border-radius:var(--radius-lg); padding:24px; width:520px; max-width:92vw; box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+      <h2 style="margin:0 0 4px; font-size:15px;">Flag This Topic for Revision</h2>
+      <p class="muted" style="margin:0 0 14px; font-size:12px;">This will save the question, GPT answer snapshot, and all cited clause IDs for committee review.</p>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Notes <span class="req">*</span></label>
+        <textarea id="topicFlagNotes" rows="4"
+                  style="width:100%; resize:vertical;"
+                  placeholder="Describe what concerns you about this answer or the related rules…"></textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="secondary" style="width:auto;" onclick="closeTopicFlagModal()">Cancel</button>
+        <button type="button" id="topicFlagSubmit" style="width:auto;" onclick="submitTopicFlag()">Submit Flag</button>
+      </div>
+      <div id="topicFlagFeedback" style="margin-top:10px; font-size:12px; min-height:1.2em;"></div>
+    </div>
+  </div>
+
+  {# Clause flag modal (shared) #}
+  <div id="flagModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:500; align-items:center; justify-content:center;">
+    <div style="background:var(--surface); border-radius:var(--radius-lg); padding:24px; width:480px; max-width:92vw; box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+      <h2 style="margin:0 0 4px; font-size:15px;">Flag for Revision</h2>
+      <p id="flagModalSubtitle" class="muted" style="margin:0 0 16px; font-size:12px;"></p>
+      <input type="hidden" id="flagModalClauseId">
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Notes <span class="req">*</span></label>
+        <textarea id="flagModalNotes" rows="4"
+                  style="width:100%; resize:vertical;"
+                  placeholder="Describe what you think should be revised or reconsidered..."></textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="secondary" style="width:auto;" onclick="closeFlagModal()">Cancel</button>
+        <button type="button" id="flagModalSubmit" style="width:auto;" onclick="submitFlagModal()">Submit Flag</button>
+      </div>
+      <div id="flagModalFeedback" style="margin-top:10px; font-size:12px; min-height:1.2em;"></div>
+    </div>
+  </div>
+
+  <script>
+  // Clause flag modal
+  function openFlagModal(btn) {
+    var clauseId = btn.getAttribute('data-clause-id');
+    var citation = btn.getAttribute('data-citation');
+    document.getElementById('flagModalClauseId').value = clauseId;
+    document.getElementById('flagModalSubtitle').textContent = citation;
+    document.getElementById('flagModalNotes').value = '';
+    document.getElementById('flagModalFeedback').textContent = '';
+    document.getElementById('flagModal').style.display = 'flex';
+    setTimeout(function() { document.getElementById('flagModalNotes').focus(); }, 50);
+  }
+  function closeFlagModal() { document.getElementById('flagModal').style.display = 'none'; }
+  document.getElementById('flagModal').addEventListener('click', function(e) {
+    if (e.target === this) closeFlagModal();
+  });
+  function submitFlagModal() {
+    var clauseId = document.getElementById('flagModalClauseId').value;
+    var notes = document.getElementById('flagModalNotes').value.trim();
+    var feedback = document.getElementById('flagModalFeedback');
+    var btn = document.getElementById('flagModalSubmit');
+    if (!notes) { feedback.textContent = 'Notes are required.'; feedback.style.color = 'var(--danger)'; return; }
+    btn.disabled = true; btn.textContent = 'Submitting\u2026'; feedback.textContent = '';
+    var fd = new FormData();
+    fd.append('flag_type', 'clause');
+    fd.append('clause_id', clauseId);
+    fd.append('flag_notes', notes);
+    fetch('/admin/flags', { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        btn.disabled = false; btn.textContent = 'Submit Flag';
+        if (data.ok) { feedback.textContent = '\u2713 Flagged successfully.'; feedback.style.color = 'var(--accent)'; setTimeout(closeFlagModal, 1200); }
+        else { feedback.textContent = data.message || 'Failed to flag.'; feedback.style.color = 'var(--danger)'; }
+      })
+      .catch(function() { btn.disabled = false; btn.textContent = 'Submit Flag'; feedback.textContent = 'Request failed.'; feedback.style.color = 'var(--danger)'; });
+  }
+
+  // Topic flag modal
+  function openTopicFlagModal() {
+    document.getElementById('topicFlagNotes').value = '';
+    document.getElementById('topicFlagFeedback').textContent = '';
+    document.getElementById('topicFlagModal').style.display = 'flex';
+    setTimeout(function() { document.getElementById('topicFlagNotes').focus(); }, 50);
+  }
+  function closeTopicFlagModal() { document.getElementById('topicFlagModal').style.display = 'none'; }
+  document.getElementById('topicFlagModal').addEventListener('click', function(e) {
+    if (e.target === this) closeTopicFlagModal();
+  });
+  function submitTopicFlag() {
+    var notes = document.getElementById('topicFlagNotes').value.trim();
+    var feedback = document.getElementById('topicFlagFeedback');
+    var btn = document.getElementById('topicFlagSubmit');
+    if (!notes) { feedback.textContent = 'Notes are required.'; feedback.style.color = 'var(--danger)'; return; }
+    btn.disabled = true; btn.textContent = 'Submitting\u2026'; feedback.textContent = '';
+    var fd = new FormData();
+    fd.append('flag_type', 'topic');
+    fd.append('flag_notes', notes);
+    fd.append('question_text', {{ result.question | tojson }});
+    fd.append('answer_snapshot', {{ result.answer | tojson }});
+    fd.append('cited_clause_ids', {{ result.cited_clause_ids | tojson | safe }}.join(','));
+    fetch('/admin/flags', { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        btn.disabled = false; btn.textContent = 'Submit Flag';
+        if (data.ok) { feedback.textContent = '\u2713 Topic flagged successfully.'; feedback.style.color = 'var(--accent)'; setTimeout(closeTopicFlagModal, 1200); }
+        else { feedback.textContent = data.message || 'Failed to flag.'; feedback.style.color = 'var(--danger)'; }
+      })
+      .catch(function() { btn.disabled = false; btn.textContent = 'Submit Flag'; feedback.textContent = 'Request failed.'; feedback.style.color = 'var(--danger)'; });
+  }
+  </script>
+
+  {% else %}
+  <div class="panel">
+    <p class="muted">Enter a question above and click <strong>Ask</strong> to get a GPT-powered answer based on the HOA clause database.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
