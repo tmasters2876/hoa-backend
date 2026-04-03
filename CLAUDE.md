@@ -6,7 +6,7 @@
 
 This repo also includes a local-only admin interface in `admin_app.py` for maintaining the Supabase `clauses` table on a Mac without deploying anything.
 
-This repo appears to be the simple production branch. There is no README in the repo as of this audit, so the source files are the primary documentation.
+This is the **production branch**. The dev/experimental branch lives at `../hoa-backend-dev/`.
 
 ## Runtime Architecture
 
@@ -14,111 +14,110 @@ This repo appears to be the simple production branch. There is no README in the 
 - `app.py` creates the Flask app and enables global CORS.
 - `POST /ask` reads JSON input and delegates all business logic to `answer_question()` in `ask_gpt.py`.
 - `POST /log` forwards question/answer/ip data to a hardcoded Google Apps Script endpoint for logging.
-- `admin_app.py` runs a separate local Flask app for clause search, inline edits, deletes, adds, embedding refresh, and search testing.
+- `admin_app.py` runs a separate local Flask app for clause search, inline edits, deletes, adds, embedding refresh, search testing, pending change approvals, revision flags, and GPT-powered admin search.
 
 ### AI / retrieval layer
 - `ask_gpt.py` loads env vars with `load_dotenv()`.
 - It initializes:
-  - shared client helpers from `services.py`
   - `OpenAI` using `OPENAI_API_KEY`
   - Supabase using `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-- Retrieval flow:
+- Retrieval flow (`fetch_matching_clauses`):
   1. Generate an embedding for the user question using `text-embedding-ada-002`.
   2. Call Supabase RPC `match_clauses` with that embedding.
-  3. If fewer than 5 vector matches are returned, run a fallback `ilike("plain_summary", f"%{question}%")` query on the `clauses` table.
-  4. Keep only unique clauses whose `match_source` is `"Vector Match"`.
-  5. If nothing remains, fetch a soft fallback set by querying `clauses.tags` for `["shed", "structure", "placement", "approval"]`.
-  6. Format the clauses into HTML snippets and send them to OpenAI `gpt-4o` for final response generation.
+  3. If fewer than 5 vector matches are returned, run keyword fallback queries.
+  4. Score and dedupe candidates; keep only those above a 0.5 threshold, up to 5.
+  5. **Document diversity enforcement**: if all top results are from `"Texas Property Code"`, replace the lowest-scoring entry with the highest-scoring non-TX-Code clause found in the scored list.
+  6. If nothing remains after threshold, take top 2 regardless.
+  7. Format the clauses into HTML snippets and send them to OpenAI `gpt-4o` for final response generation.
 
 ### Special behavior
-- `check_instant_whimsy()` returns canned responses for:
-  - creator/developer questions
-  - feedback/complaint questions
-  - fantasy/dragon/wizard style questions
+- `check_instant_whimsy()` returns canned responses for creator/developer questions, feedback/complaint questions, and fantasy/dragon/wizard style questions.
 - If whimsy triggers, the app returns early and skips Supabase/OpenAI retrieval.
 
 ### Admin tool behavior
-- `admin_app.py` is intended for local use at `http://127.0.0.1:5050`.
+- `admin_app.py` is intended for local use at `http://127.0.0.1:5051`.
+- Runs on port `PORT` env var (default 5051).
+- Three user tiers:
+  - **Superusers** (`SUPERUSERS = {'tmasters', 'cmasters', 'admin'}`) — full access
+  - **Approvers** (`is_approver=True` in `admin_users` table) — can close/reopen revision flags; no clause edit approval or user management rights
+  - **Regular users** — browse, flag, comment only
 - It supports:
-  - browse/search by keyword, tag, and document
-  - add clauses manually
-  - inline editing of `clause_text`, `plain_summary`, tags, citation, page, link, and `precedence_level`
-  - delete clauses
-  - mark embeddings stale by setting `embedding = null` when text changes
-  - regenerate embeddings through OpenAI using the current OpenAI embedding model
-  - test semantic search by calling the existing `match_clauses` RPC and showing keyword fallback results alongside it
+  - Browse/search by keyword, tag, and document
+  - Add clauses manually (with optional self-approve for superusers)
+  - Inline editing of clause fields (AJAX, with optional self-approve)
+  - Delete clauses (submit for approval)
+  - Mark embeddings stale / regenerate via OpenAI
+  - Pending changes workflow (submit → approve/reject by second superuser)
+  - Source verification via PDF fuzzy-match against Google Drive links
+  - Bulk CSV import and bulk CSV delete (superusers only)
+  - User management (create, activate/deactivate, delete, reset password, grant/revoke Approver role)
+  - Audit log (all clause changes, approvals, user actions)
+  - **CCR Revision Flags** — flag individual clauses or full GPT Q&A topics for revision committee review; threaded comments; status workflow (open → in_review → closed)
+  - **Admin Search** (`/admin/search`) — GPT-powered Q&A using the same retrieval logic as the resident chatbot; cited clause cards with Flag buttons; "Flag this Topic" for topic-level flags
 
 ## API Endpoints
 
 ### `POST /ask`
 - File: `app.py`
-- Request JSON:
-  - `question` string
-  - `mode` optional, default `"default"`
-  - `tags` optional list, default `[]`
-  - `output_format` optional, default `"markdown"`
-- Behavior:
-  - Calls `answer_question(question, mode, tags, output_format)`
-  - Returns JSON if `output_format == "json"`
-  - Otherwise returns a text response with content type `text/markdown`
+- Request JSON: `question`, `mode` (optional), `tags` (optional), `output_format` (optional, default `"markdown"`)
+- Returns JSON if `output_format == "json"`, otherwise `text/markdown`
 
 ### `POST /log`
 - File: `app.py`
-- Request JSON:
-  - `question`
-  - `answer`
-  - `ip`
-- Behavior:
-  - Sends payload to a hardcoded Google Apps Script URL using `requests.post`
-  - Returns `{status: "logged", code: <status>}` on success
+- Request JSON: `question`, `answer`, `ip`
+- Sends payload to a hardcoded Google Apps Script URL; returns `{status: "logged", code: <status>}`
 
 ### Local admin endpoints
-- `GET /admin`
-- `POST /admin/clauses`
-- `POST /admin/clauses/<id>/update`
-- `POST /admin/clauses/<id>/delete`
-- `POST /admin/clauses/<id>/regenerate-embedding`
-- `GET /health`
+- `GET /admin` — clause browse/search dashboard
+- `POST /admin/clauses` — add clause
+- `POST /admin/clauses/<id>/update` — edit clause (form)
+- `POST /admin/clauses/<id>/update-json` — edit clause (AJAX/JSON)
+- `POST /admin/clauses/<id>/delete` — submit deletion
+- `POST /admin/clauses/<id>/regenerate-embedding` — refresh embedding
+- `GET /admin/import/template` — download CSV template
+- `POST /admin/import` — bulk import clauses from CSV
+- `GET /admin/bulk-delete/template` — download bulk delete template
+- `POST /admin/bulk-delete` — bulk delete clauses by clause_id from CSV
+- `GET /admin/pending` — list pending changes
+- `POST /admin/pending/<id>/approve` — approve pending change
+- `POST /admin/pending/<id>/reject` — reject pending change
+- `GET /admin/audit` — audit log
+- `GET /admin/users` — user management
+- `POST /admin/users` — create user
+- `POST /admin/users/<id>/toggle` — activate/deactivate user
+- `POST /admin/users/<id>/toggle-approver` — grant/revoke Approver role
+- `POST /admin/users/<id>/delete` — delete user
+- `POST /admin/users/<id>/reset-password` — reset user password
+- `POST /admin/users/change-password` — change own password
+- `GET /admin/flags` — list revision flags
+- `GET /admin/flags/<id>` — flag detail
+- `POST /admin/flags` — create flag (clause or topic type)
+- `POST /admin/flags/<id>/comment` — add comment to flag
+- `POST /admin/flags/<id>/status` — update flag status
+- `GET /admin/search` — admin GPT Q&A search with flag capability
+- `GET /health` — health check
 
 ## Supabase Integration
-
-Supabase is a core dependency in this repo.
 
 ### Environment variables
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
 ### Client creation
-- In `ask_gpt.py`, the code creates a Supabase client at import time using `create_client(...)`.
+- In `ask_gpt.py`: created at import time with `create_client(...)`.
+- In `admin_app.py`: via `get_supabase_client()` from `services.py` (LRU-cached; requires env vars set before import).
 
-### Supabase usage
-- RPC:
-  - `supabase.rpc("match_clauses", {...}).execute()`
-  - Expected to return semantic/vector matches from a database-side function.
-- Table queries:
-  - `supabase.from_("clauses").select("*").ilike("plain_summary", f"%{question}%")`
-  - Optional filters on `tags`, `structure_type`, and `concern_level`
-  - `supabase.from_("clauses").select("*").contains("tags", general_tags).limit(5)`
-
-### Expected schema assumptions
-The code assumes a `clauses` table and/or RPC results containing fields such as:
-- `id`
-- `clause_id`
-- `plain_summary`
-- `summary`
-- `citation`
-- `link`
-- `document`
-- `precedence_level`
-- `tags`
-- `structure_type`
-- `concern_level`
-
-It also assumes the existence of an RPC function named `match_clauses`.
+### Tables used
+- `clauses` — main clause store. Key fields: `id`, `clause_id`, `document`, `page`, `citation`, `clause_text`, `plain_summary`, `link`, `embedding`, `match_source`, `tags`, `created_at`, `precedence_level`, `status`
+- `pending_changes` — staged clause edits awaiting approval
+- `clause_audit_log` — all audit events
+- `user_activity_log` — login/logout/session events
+- `admin_users` — admin console users. Key fields: `id`, `username`, `password_hash`, `is_active`, `must_change_password`, `is_approver`
+- `clause_flags` — CCR revision flags. Key fields: `id`, `flag_type` (clause/topic), `clause_id` (text, references `clauses.clause_id`), `flagged_by`, `flag_notes`, `status`, `resolution_notes`, `closed_by`, `question_text`, `answer_snapshot`, `cited_clause_ids` (text[]), `created_at`, `updated_at`
+- `clause_flag_comments` — threaded comments on flags. Key fields: `id`, `flag_id`, `author`, `comment`, `created_at`
+- RPC: `match_clauses` — vector similarity search
 
 ## File Structure
-
-Top-level files present during this audit:
 
 ```text
 hoa-backend/
@@ -136,82 +135,60 @@ hoa-backend/
 ├── services.py
 ├── templates/
 │   ├── admin_base.html
-│   └── admin_index.html
-├── test_summary_query.py
+│   ├── admin_index.html
+│   ├── admin_pending.html
+│   ├── admin_audit.html
+│   ├── admin_users.html
+│   ├── admin_login.html
+│   ├── admin_change_password.html
+│   ├── admin_flags.html
+│   ├── admin_flag_detail.html
+│   └── admin_search.html
+├── tests/
+│   ├── __init__.py
+│   └── test_approval.py
 └── uv.lock
 ```
-
-Notes:
-- `.git/` exists but is omitted from the main tree above because it is repo metadata, not app code.
-- There is no `README.md` in this repository.
-- There is no `tests/` directory or formal test suite.
 
 ## Deployment / Environment
 
 ### Render
-- `render.yaml` deploys the app as a Python web service.
-- Build command: `pip install -r requirements.txt`
-- Start command: `python app.py`
+- `render.yaml` deploys as a Python web service.
+- Build: `pip install -r requirements.txt`
+- Start: `python app.py`
 
-### Local env sample
-- `.env.example` contains:
-  - `OPENAI_API_KEY`
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_ROLE_KEY`
+### Local env
+- Copy `.env.example` → `.env` and fill: `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SECRET_KEY`
 
-### Local admin run command
-- `python admin_app.py`
-- Defaults to `127.0.0.1:5050`
+### Local admin run
+- `python admin_app.py` — defaults to port 5051
 
 ## Important Observations
 
-### Likely broken or risky
-- `app.py` assumes `request.get_json()` returns a dict. If the body is missing or invalid JSON, `data.get(...)` will raise because `data` can be `None`.
-- `POST /log` uses a hardcoded external Google Apps Script URL. That is brittle and not configurable.
-- The service role key is used directly in app code. That key has elevated privileges and should be treated as highly sensitive.
-- `answer_question()` accepts `mode`, `structure_type`, and `concern_level`, but `/ask` only passes `mode` and never forwards `structure_type` or `concern_level`.
+### Known issues / risks
+- `app.py` assumes `request.get_json()` returns a dict — will raise if body is missing/invalid JSON.
+- `POST /log` uses a hardcoded external Google Apps Script URL.
+- The service role key is used directly in app code — treat as highly sensitive.
+- `answer_question()` accepts `mode`, `structure_type`, `concern_level` but `/ask` only passes `mode`.
 - `mode` is effectively unused in the answer pipeline.
-- `fetch_matching_clauses()` appends fallback keyword matches, but `answer_question()` later keeps only entries whose `match_source` is `"Vector Match"`. That means keyword fallback results are effectively discarded unless no vector results exist and the soft fallback runs. This looks like a logic bug.
-- The default embedding model is still `text-embedding-ada-002` unless overridden via `OPENAI_EMBEDDING_MODEL`, which is an older model choice and may be a maintenance risk.
-- The default generation model is `gpt-4o` unless overridden via `OPENAI_CHAT_MODEL`.
-- `pyproject.toml` is stale/inaccurate. It names the package `python-template` and declares no dependencies, while the real dependencies live in `requirements.txt`.
-- `uv.lock` is effectively empty/minimal and does not reflect the actual dependency set.
-- `.replit` references `main.py`, but this repo’s entry file is `app.py`. That config is stale/broken for Replit usage.
-- `test_summary_query.py` is not a real automated test; it is a manual script that prints a query result.
-- `test_summary_query.py` queries `summary`, while the main fallback query in `ask_gpt.py` uses `plain_summary`. That may indicate a schema mismatch or drift.
-- `generated-icon.png` is present but unrelated to runtime behavior.
-- `admin_app.py` uses a local Flask secret key constant. That is acceptable for local-only use, but should move to env if the tool ever becomes shared.
+- The default embedding model is `text-embedding-ada-002` (via `OPENAI_EMBEDDING_MODEL` env override).
+- The default generation model is `gpt-4o` (via `OPENAI_CHAT_MODEL` env override).
+- `pyproject.toml` is stale — names the package `python-template` and declares no real dependencies.
+- `.replit` references `main.py` but entry file is `app.py` — stale for Replit usage.
+- `test_summary_query.py` is a manual print script, not an automated test.
+- `_is_approver()` in `admin_app.py` makes a Supabase query on every request via `inject_superuser` — acceptable for local-only use at low concurrency.
 
-### Code quality / maintenance opportunities
-- Add a real `README.md` explaining setup, API contract, Supabase schema, and deployment.
-- Add input validation for `/ask` and `/log`.
-- Move hardcoded URLs and model names into environment variables.
-- Add timeouts and error handling around outbound logging requests.
-- Add structured logging instead of returning raw exception strings to clients.
-- Replace the current fallback merge logic so keyword matches can actually contribute to results.
-- Add automated tests for:
-  - whimsy paths
-  - Supabase fallback behavior
-  - `/ask` JSON vs markdown responses
-  - invalid request bodies
-- Consider separating retrieval, prompt formatting, and response rendering into smaller modules.
-
-## Known Entry Points
-
-- App server entry: `python app.py`
-- Admin tool entry: `python admin_app.py`
-- Main request handler: `app.py` -> `/ask`
-- Core business logic: `ask_gpt.py` -> `answer_question()`
-- Shared service wiring: `services.py`
-- Manual DB probe: `test_summary_query.py`
+### Code quality / maintenance notes
+- `tests/test_approval.py` covers `submit_pending_change`, `_apply_pending_change`, and the `/admin/pending/<id>/approve` route with full mocking.
+- Keyword fallback deduplication logic vs vector-only filter in `answer_question()` may still discard keyword results — verify behavior if search quality regresses.
+- `ask_gpt.py` and `admin_app.py` both create their own Supabase clients independently.
 
 ## Practical Notes For Future Sessions
 
-- Start debugging in `app.py` for HTTP-level behavior.
-- Start debugging in `ask_gpt.py` for retrieval quality, prompt construction, and OpenAI/Supabase issues.
-- Start debugging in `admin_app.py` for clause maintenance workflows.
-- If answers are weak, inspect:
-  - Supabase RPC `match_clauses`
-  - clause schema/contents
-  - the vector-vs-fallback deduplication logic
-- If deployment fails, check `render.yaml`, `requirements.txt`, and the mismatch with `pyproject.toml` / `.replit`.
+- Start debugging HTTP-level behavior in `app.py`.
+- Start debugging retrieval quality, prompt construction, and OpenAI/Supabase issues in `ask_gpt.py`.
+- Start debugging clause maintenance workflows in `admin_app.py`.
+- Revision flag routes all live at the bottom of `admin_app.py` above `if __name__ == "__main__"`.
+- `inject_superuser` context processor runs on every request that renders a template — it queries both `pending_changes` and `clause_flags` counts plus `_is_approver()`.
+- If answers are weak, inspect: Supabase RPC `match_clauses`, clause schema/contents, vector-vs-fallback scoring, document diversity enforcement.
+- If deployment fails, check `render.yaml`, `requirements.txt`, and the mismatch with `pyproject.toml`.
