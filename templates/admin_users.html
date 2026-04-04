@@ -94,12 +94,10 @@
       </form>
     </details>
 
+    {% if is_superuser %}
     <div class="panel">
       <h2>Admin Users</h2>
       <p class="muted">{{ users | length }} user{% if users | length != 1 %}s{% endif %}. You cannot deactivate, delete, or reset the password of your own account from this page.</p>
-      {% if not is_superuser %}
-      <p class="muted" style="margin-top: 6px;">Contact tmasters or cmasters to manage user accounts.</p>
-      {% endif %}
 
       <table class="result-table" style="margin-top: 14px;">
         <thead>
@@ -187,6 +185,7 @@
         </tbody>
       </table>
     </div>
+    {% endif %}
 
     {% if is_superuser %}
     <div class="panel">

@@ -1208,42 +1208,45 @@ def bulk_delete_clauses():
 @app.get("/admin/users")
 @login_required
 def admin_users():
-    result = (
-        supabase()
-        .from_("admin_users")
-        .select("id,username,is_active,created_at,must_change_password,is_approver")
-        .order("created_at")
-        .execute()
-    )
-    users = result.data or []
+    is_superuser = session.get("username") in SUPERUSERS
 
-    # Last Login: most recent login_success per username
+    users = []
     last_logins = {}
-    try:
-        login_rows = (
+    if is_superuser:
+        result = (
             supabase()
-            .from_("user_activity_log")
-            .select("username,occurred_at")
-            .eq("action", "login_success")
-            .order("occurred_at", desc=True)
-            .limit(500)
+            .from_("admin_users")
+            .select("id,username,is_active,created_at,must_change_password,is_approver")
+            .order("created_at")
             .execute()
-        ).data or []
-        seen = set()
-        for row in login_rows:
-            uname = row["username"]
-            if uname not in seen:
-                seen.add(uname)
-                ts = row["occurred_at"] or ""
-                last_logins[uname] = ts[:16].replace('T', ' ') if ts else ""
-    except Exception as e:
-        print(f"[activity] WARNING: failed to fetch last logins: {e}")
+        )
+        users = result.data or []
+
+        try:
+            login_rows = (
+                supabase()
+                .from_("user_activity_log")
+                .select("username,occurred_at")
+                .eq("action", "login_success")
+                .order("occurred_at", desc=True)
+                .limit(500)
+                .execute()
+            ).data or []
+            seen = set()
+            for row in login_rows:
+                uname = row["username"]
+                if uname not in seen:
+                    seen.add(uname)
+                    ts = row["occurred_at"] or ""
+                    last_logins[uname] = ts[:16].replace('T', ' ') if ts else ""
+        except Exception as e:
+            print(f"[activity] WARNING: failed to fetch last logins: {e}")
 
     # Activity feed (superusers only)
     activity_log = []
     activity_page = max(1, to_int_or_none(request.args.get("activity_page")) or 1)
     activity_total_pages = 1
-    if session.get("username") in SUPERUSERS:
+    if is_superuser:
         try:
             act_start = (activity_page - 1) * ACTIVITY_PAGE_SIZE
             act_end = act_start + ACTIVITY_PAGE_SIZE - 1
@@ -1267,7 +1270,7 @@ def admin_users():
         "admin_users.html",
         users=users,
         current_user_id=session.get("user_id"),
-        is_superuser=session.get("username") in SUPERUSERS,
+        is_superuser=is_superuser,
         last_logins=last_logins,
         activity_log=activity_log,
         activity_page=activity_page,
