@@ -981,7 +981,7 @@
           <div class="user-avatar">{{ session.get('username', '?')[:2] }}</div>
           <div>
             <div class="user-name">{{ session.get('username', '') }}</div>
-            <div class="user-role">{{ 'Superuser' if is_superuser else 'Admin' }}</div>
+            <div class="user-role">{{ 'Superuser' if is_superuser else 'User' }}</div>
           </div>
           <div class="sidebar-logout">
             <form method="post" action="{{ url_for('logout') }}">
