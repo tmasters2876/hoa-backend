@@ -182,3 +182,6 @@ tx_chapter_209.csv
 tx_chapter_207.csv
 fix_tags_supabase.py
 delete_stub_clauses.py
+validate_missing_clauses.py
+import_missing_clauses.py
+missing_candidates_*.csv
