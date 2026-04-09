@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import random
 from dotenv import load_dotenv
 from supabase import create_client
@@ -135,6 +136,70 @@ def fetch_priority_clauses(question: str) -> list:
     except Exception as e:
         print(f"[priority] WARNING: failed to fetch priority clauses: {e}")
         return []
+
+
+def gpt_filter_clauses(question: str, clauses: list) -> list:
+    """Use GPT to filter and rank candidate clauses by actual relevance
+    to the question. Returns reordered list of relevant clauses only."""
+
+    if not clauses:
+        return clauses
+
+    # Build a compact summary of each clause for GPT to evaluate
+    clause_summaries = []
+    for i, c in enumerate(clauses):
+        cid = c.get("clause_id") or c.get("id") or str(i)
+        summary = c.get("plain_summary") or c.get("clause_text", "")[:200]
+        clause_summaries.append(f"ID: {cid}\nSummary: {summary}")
+
+    clauses_text = "\n\n".join(clause_summaries)
+
+    filter_prompt = f"""Question: {question}
+
+Below are candidate clauses from HOA governing documents.
+Your job is to identify which clauses actually and specifically answer
+this question. Be strict — a clause about horses in fenced areas does NOT
+answer a question about fence placement. A clause about flag pole height
+does NOT answer a question about fence height.
+
+Return ONLY a JSON array of clause IDs that are genuinely relevant to the
+question, ordered from most to least relevant. If none are relevant,
+return an empty array []. Return ONLY the JSON array, no other text.
+
+Candidate clauses:
+{clauses_text}"""
+
+    try:
+        response = client.chat.completions.create(
+            model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o"),
+            messages=[
+                {"role": "system", "content": "You are a relevance filter for HOA document search. Return only JSON."},
+                {"role": "user", "content": filter_prompt}
+            ],
+            temperature=0.0,
+            max_tokens=200,
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip markdown if present
+        raw = re.sub(r'```json|```', '', raw).strip()
+        relevant_ids = json.loads(raw)
+
+        if not isinstance(relevant_ids, list):
+            return clauses
+
+        # Reorder clauses by GPT ranking, keeping only relevant ones
+        by_id = {(c.get("clause_id") or c.get("id")): c for c in clauses}
+        filtered = [by_id[cid] for cid in relevant_ids if cid in by_id]
+
+        # If GPT filtered everything out, fall back to original list
+        if not filtered:
+            return clauses
+
+        return filtered
+
+    except Exception as e:
+        print(f"[filter] WARNING: GPT relevance filter failed: {e}")
+        return clauses  # fall back to unfiltered on any error
 
 
 def _trim(text, max_chars):
@@ -287,7 +352,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
     response = supabase.rpc("match_clauses", {
         "query_embedding": query_embedding,
         "match_threshold": 0.6,
-        "match_count": 10
+        "match_count": 20
     }).execute()
 
     vector_matches = [r for r in (response.data or []) if r.get("status") == "approved"]
@@ -325,7 +390,7 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
         if concern_level:
             query = query.eq("concern_level", concern_level)
 
-        fallback_matches = query.limit(10).execute().data or []
+        fallback_matches = query.limit(20).execute().data or []
     except Exception:
         # older client fallback: two queries
         seen = set()
@@ -418,6 +483,8 @@ def fetch_matching_clauses(question, tags=None, structure_type=None, concern_lev
     if not top and scored and scored[0][0] > 0.5:
         top = [scored[0][1], scored[1][1]] if len(scored) > 1 else [scored[0][1]]
 
+    # Final relevance filter — use GPT to remove off-topic clauses
+    top = gpt_filter_clauses(original_question, top)
     return top
 
 # =========================
