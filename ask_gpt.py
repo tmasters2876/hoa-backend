@@ -192,7 +192,6 @@ Answer the resident's question using only the clauses above."""
     )
 
     final_answer = response.choices[0].message.content
-    raw_cited_ids = set(re.findall(r'\[([A-Z][A-Z0-9_\-]{3,})\]', final_answer))
     # Build lookup by clause ID
     by_id = {c.get("clause_id"): c for c in all_clauses}
 
@@ -248,6 +247,9 @@ Answer the resident's question using only the clauses above."""
         lambda m: f'[{m.group(1)}]',
         final_answer
     )
+
+    # Capture cited IDs after bracket cleanup but before link injection
+    raw_cited_ids = set(re.findall(r'\[([A-Z][A-Z0-9_\-]{3,})\]', final_answer))
 
     # Replace [CLAUSE_ID] with proper linked citation
     final_answer = re.sub(
