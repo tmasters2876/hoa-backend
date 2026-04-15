@@ -1926,28 +1926,13 @@ def admin_search():
     question = request.args.get("q", "").strip()
     result = None
     if question:
-        from ask_gpt import fetch_matching_clauses, format_clauses_for_prompt, build_gpt_prompt
-        from services import get_openai_client
-
-        clauses = fetch_matching_clauses(question)
-        cited_clause_ids = [c.get("clause_id") or c.get("id") for c in clauses if c.get("clause_id") or c.get("id")]
-        clause_text = format_clauses_for_prompt(clauses)
-        prompt = build_gpt_prompt(question, clause_text, no_matches=not clauses)
-
-        oc = get_openai_client()
-        gpt_resp = oc.chat.completions.create(
-            model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o"),
-            messages=[
-                {"role": "system", "content": "You are an expert HOA assistant."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.4,
-        )
-        answer = gpt_resp.choices[0].message.content
-
+        from ask_gpt import answer_question
+        raw = answer_question(question, output_format="json")
+        clauses = raw.get("clauses", [])
+        cited_clause_ids = [c.get("clause_id") for c in clauses if c.get("clause_id")]
         result = {
             "question": question,
-            "answer": answer,
+            "answer": raw.get("answer", ""),
             "clauses": clauses,
             "cited_clause_ids": cited_clause_ids,
         }
