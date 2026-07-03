@@ -77,19 +77,22 @@ hoa-backend/
 
 `POST /log` forwards question/answer/ip to a hardcoded Google Apps Script URL for logging (not configurable via env var).
 
-### ask_gpt.py — Full-Corpus Approach
+### ask_gpt.py — Full-Corpus Approach (with relevance pre-filter)
 
-**Vector search was removed.** All approved clauses are sent to GPT-4o in a single prompt.
+**Vector search was removed** from the resident-facing path in favor of full-corpus prompting; **a lightweight keyword/tag relevance pre-filter was added** (April 2026) to cut prompt size without reintroducing embeddings.
 
-1. `get_all_clauses()` — fetches all `status='approved'` clauses from Supabase using paginated `range()` calls (page size 1000). Cached in `_clause_cache` (module-level global) for the lifetime of the process.
-2. `format_all_clauses_for_gpt()` — sorts clauses by `precedence_level` (lower = higher authority), applies `DOC_SHORT` abbreviation map to save tokens, truncates each clause to 400 chars, formats as `[clause_id|doc_short|citation]\nsummary | FULL TEXT: clause_text`.
-3. `answer_question()` — sends full formatted corpus + system prompt to `gpt-4o` at temperature 0.1. GPT cites clauses using `[CLAUSE_ID]` bracket notation.
-4. Post-processing (order matters — do not change):
+1. `get_all_clauses()` — fetches all `status='approved'` clauses (including `tags`) from Supabase using paginated `range()` calls (page size 1000). Cached in `_clause_cache` (module-level global) for the lifetime of the process.
+2. `filter_relevant_clauses(question, all_clauses, tags=None, min_results=15, min_score=2)` — scores each clause by keyword overlap with the question plus a higher-weighted match against the clause's `tags` array (and any explicit `tags` the caller passes, currently inert from Carrd). Returns the relevant subset sorted by score desc / precedence asc. **Safety net**: if fewer than `min_results` clauses clear `min_score`, returns the complete unfiltered corpus — this is what keeps vague ("Tell me about the HOA") or likely-uncovered (e.g. "chickens") questions from losing context. Validated against the live corpus: narrow questions (fences, solar panels, paint) cut the prompt 79–98%. Gated behind `ENABLE_CLAUSE_PREFILTER` (default `true`; set `false` in Render env vars for an instant disable, no redeploy).
+3. `format_all_clauses_for_gpt()` — sorts clauses by `precedence_level` (lower = higher authority), applies `DOC_SHORT` abbreviation map to save tokens, truncates each clause to 400 chars, formats as `[clause_id|doc_short|citation]\nsummary | FULL TEXT: clause_text`. Receives the **filtered** subset from step 2, not necessarily the full corpus.
+4. `answer_question()` — sends the (possibly filtered) formatted corpus + system prompt to `gpt-4o` at temperature 0.1. GPT cites clauses using `[CLAUSE_ID]` bracket notation.
+5. Post-processing (order matters — do not change) **operates on the FULL, unfiltered corpus** (`all_clauses`, not the filtered subset) — this is deliberate: it's what keeps `replace_bracketed_id()` able to resolve any clause GPT might cite, rather than silently dropping citations for clauses outside the filtered set:
    - Normalize malformed brackets: `[WALLS_01|BG2022|Page 13]` → `[WALLS_01]`
    - Capture `raw_cited_ids` from cleaned response ← **must be here, before link injection**
    - Replace `[CLAUSE_ID]` with HTML `<a>` links using `DOC_SHORT_DISPLAY` map for friendly document names
    - Cap Texas Property Code to 1 display result; keyword-scored fallback if no cited clauses
-5. `check_instant_whimsy()` — intercepts creator/developer and fantasy keyword questions, returns canned response, skips GPT entirely.
+6. `check_instant_whimsy()` — intercepts creator/developer and fantasy keyword questions, returns canned response, skips GPT entirely.
+
+Unit tests for `filter_relevant_clauses()` live in `tests/test_ask_gpt.py` (pure function, no Supabase mocking needed).
 
 **CCR delegation rule in system prompt**: When a CCR delegates to Builders Guidelines ("per the Builder Guidelines" / "as approved by the ARC"), Builders Guidelines governs that topic. GPT cites both documents.
 
@@ -172,6 +175,7 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 OPENAI_CHAT_MODEL          (default: gpt-4o)
 OPENAI_EMBEDDING_MODEL     (default: text-embedding-ada-002)
+ENABLE_CLAUSE_PREFILTER    (default: true; set "false" to disable the relevance pre-filter instantly)
 ```
 
 ### hoa-admin
@@ -279,4 +283,4 @@ Then: `rm /tmp/gen_hash.py`
 - Always `SELECT` before any `INSERT` to check for existing rows
 - Mac is Apple Silicon (arm64) running macOS
 - `SUPERUSERS` set in `admin_app.py` is the single source of truth for superuser permissions — do not hardcode names in templates
-- Token concern: if clause corpus grows very large, full-corpus approach will hit GPT token limits — monitor prompt size
+- Token concern (partially addressed by the `filter_relevant_clauses()` pre-filter): the corpus is still fetched/cached in full, and vague/broad questions still fall back to the complete corpus by design — if it keeps growing, revisit `min_results`/`min_score` in `ask_gpt.py` or reconsider the admin-side embeddings/`match_clauses` RPC for the resident-facing pipeline too
