@@ -176,15 +176,32 @@ def check_instant_whimsy(question_lower):
         ])
     return None
 
-def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown"):
+def answer_question(question, tags=None, mode="default", structure_type=None, concern_level=None, output_format="markdown", meta_out=None):
+    """meta_out: optional dict the caller owns; populated in place with
+    logging metadata (whimsy, cited_ids, prefilter_used,
+    prefilter_clause_count). Never affects the answer itself."""
     whimsy_reply = check_instant_whimsy(question.lower().strip())
     if whimsy_reply:
+        if meta_out is not None:
+            meta_out.update({
+                "whimsy": True,
+                "cited_ids": [],
+                "prefilter_used": None,
+                "prefilter_clause_count": None,
+            })
         return whimsy_reply
 
     all_clauses = get_all_clauses()
     relevant_clauses = all_clauses
     if os.getenv("ENABLE_CLAUSE_PREFILTER", "true").lower() != "false":
         relevant_clauses = filter_relevant_clauses(question, all_clauses, tags=tags)
+    if meta_out is not None:
+        meta_out.update({
+            "whimsy": False,
+            "cited_ids": [],
+            "prefilter_used": len(relevant_clauses) < len(all_clauses),
+            "prefilter_clause_count": len(relevant_clauses),
+        })
     clauses_text = format_all_clauses_for_gpt(relevant_clauses)
 
     system_prompt = """You are the PLCA Board Assistant for Plantation Lakes Community Association (PLCA), located in Waller and Grimes Counties, Texas.
@@ -296,6 +313,11 @@ Answer the resident's question using only the clauses above."""
 
     # Capture cited IDs after bracket cleanup but before link injection
     raw_cited_ids = set(re.findall(r'\[([A-Z][A-Z0-9_\-]{3,})\]', final_answer))
+
+    if meta_out is not None:
+        # Only IDs that resolve to real clauses; hallucinated IDs are
+        # stripped from the answer below and would pollute analytics.
+        meta_out["cited_ids"] = sorted(cid for cid in raw_cited_ids if cid in by_id)
 
     # Replace [CLAUSE_ID] with proper linked citation
     final_answer = re.sub(
