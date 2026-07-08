@@ -218,3 +218,24 @@ def test_export_applies_tag_filter(client, mock_supabase):
     with sess, load, patch("admin_app.log_user_activity"):
         client.get("/admin/export?tag=FENCE")
     assert ("tags", ["FENCE"]) in [c.args for c in mock_supabase.contains.call_args_list]
+
+
+# ── Committee member guide (/admin/guide) ────────────────────────────────────
+
+def test_guide_renders_markdown_with_mermaid(client, mock_supabase):
+    sess, load = login_session("member")
+    with sess, load:
+        resp = client.get("/admin/guide")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert '<div class="mermaid">' in html          # fence converted for mermaid.js
+    assert "flowchart TD" in html                    # raw diagram source intact
+    assert "-->" in html                             # arrows un-escaped for mermaid
+    assert "Document Revision Committee" in html     # markdown body rendered
+    assert "language-mermaid" not in html            # no leftover escaped fence
+
+
+def test_guide_requires_login(client, mock_supabase):
+    resp = client.get("/admin/guide")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]

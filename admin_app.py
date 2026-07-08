@@ -1991,6 +1991,38 @@ def delete_tag():
     return redirect(url_for("admin_tags"))
 
 
+# ── Committee Member Guide ────────────────────────────────────────────────────
+
+@app.get("/admin/guide")
+@login_required
+def member_guide():
+    """Renders MEMBER_WORKFLOW.md in-console so volunteers never need
+    GitHub. The .md file stays the single source of truth; mermaid fences
+    are handed to mermaid.js client-side."""
+    import html as html_lib
+    import markdown as md_lib
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MEMBER_WORKFLOW.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        print(f"[guide] failed to read MEMBER_WORKFLOW.md: {e}")
+        flash("The member guide file is missing — contact the developer.", "error")
+        return redirect(url_for("admin_home"))
+
+    body = md_lib.markdown(text, extensions=["fenced_code", "tables"])
+    # fenced ```mermaid blocks come out as escaped <pre><code>; hand the raw
+    # source to mermaid.js instead
+    body = re.sub(
+        r'<pre><code class="language-mermaid">(.*?)</code></pre>',
+        lambda m: '<div class="mermaid">' + html_lib.unescape(m.group(1)) + "</div>",
+        body,
+        flags=re.S,
+    )
+    return render_template("admin_guide.html", body=body)
+
+
 # ── My Submissions (#6) ───────────────────────────────────────────────────────
 
 @app.get("/admin/my-submissions")
