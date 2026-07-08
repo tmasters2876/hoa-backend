@@ -52,6 +52,7 @@ AUDIT_PAGE_SIZE = 50
 PENDING_PAGE_SIZE = 25
 ACTIVITY_PAGE_SIZE = 25
 FLAG_PAGE_SIZE = 25
+QUESTIONS_PAGE_SIZE = 25
 
 # ── Brute force protection ────────────────────────────────────────────────────
 _login_attempts: dict[str, list] = {}
@@ -1736,6 +1737,63 @@ def reject_pending(change_id: str):
     )
     flash("Change rejected.", "success")
     return redirect(url_for("admin_pending"))
+
+
+# ── Resident Questions (#11) ─────────────────────────────────────────────────
+
+@app.get("/admin/questions")
+@role_required("board")
+def admin_questions():
+    q = request.args.get("q", "").strip()
+    fallback_only = request.args.get("fallback_only") == "1"
+    no_citations = request.args.get("no_citations") == "1"
+    include_whimsy = request.args.get("include_whimsy") == "1"
+    page = max(1, to_int_or_none(request.args.get("page")) or 1)
+
+    query = supabase().from_("resident_questions").select("*", count="exact")
+    if q:
+        # strip PostgREST filter metacharacters before ilike
+        sanitized = re.sub(r"[%_,()]", " ", q).strip()
+        if sanitized:
+            query = query.ilike("question", f"%{sanitized}%")
+    if fallback_only:
+        query = query.eq("prefilter_used", False)
+    if no_citations:
+        query = query.or_("cited_clause_ids.is.null,cited_clause_ids.eq.{}")
+    if not include_whimsy:
+        query = query.eq("whimsy", False)
+
+    start = (page - 1) * QUESTIONS_PAGE_SIZE
+    end = start + QUESTIONS_PAGE_SIZE - 1
+    result = query.order("created_at", desc=True).range(start, end).execute()
+    rows = result.data or []
+    total_count = result.count or 0
+    total_pages = max(1, math.ceil(total_count / QUESTIONS_PAGE_SIZE))
+
+    filters = {
+        "q": q,
+        "fallback_only": "1" if fallback_only else "",
+        "no_citations": "1" if no_citations else "",
+        "include_whimsy": "1" if include_whimsy else "",
+    }
+    query_args = {k: v for k, v in filters.items() if v}
+    prev_url = None
+    next_url = None
+    if page > 1:
+        prev_url = url_for("admin_questions") + "?" + urlencode({**query_args, "page": page - 1})
+    if page < total_pages:
+        next_url = url_for("admin_questions") + "?" + urlencode({**query_args, "page": page + 1})
+
+    return render_template(
+        "admin_questions.html",
+        rows=rows,
+        total_count=total_count,
+        page=page,
+        total_pages=total_pages,
+        prev_url=prev_url,
+        next_url=next_url,
+        filters=filters,
+    )
 
 
 # ── CCR Revision Flags ────────────────────────────────────────────────────────

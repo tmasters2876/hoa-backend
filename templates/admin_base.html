@@ -918,6 +918,17 @@
             {% endif %}
           </a>
 
+          {% if is_superuser or is_approver %}
+          <a href="{{ url_for('admin_questions') }}"
+             class="nav-item {% if request.endpoint == 'admin_questions' %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 3h12v8H8l-3 3v-3H2z"/>
+              <path d="M6 6.5h4M6 8.5h2.5"/>
+            </svg>
+            Resident Questions
+          </a>
+          {% endif %}
+
           {% if is_superuser %}
           <a href="{{ url_for('admin_pending') }}"
              class="nav-item {% if request.endpoint == 'admin_pending' %}active{% endif %}">
