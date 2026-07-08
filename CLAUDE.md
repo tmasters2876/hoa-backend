@@ -156,13 +156,25 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 
 ---
 
+## THE LAW — Role Mandate (do not deviate)
+
+**This mandate is the constitution of this tool (ratified by the owner, July 2026; canonical copy in [README.md](README.md)). Every feature, permission, and change must serve it. If a proposed change conflicts with it, the change is wrong — not the mandate.**
+
+The tool has exactly two missions: **Revision** (support the Document Revision Committee in reviewing the current governing documents and building the new ones) and **Accuracy** (keep the clause database accurate, because it powers the front-end HOA search tool the community uses).
+
+1. **`member` — the Document Revision Committee.** Community volunteers + a board member + an ARC member revising the governing documents. They review current clauses, flag and discuss what should change, propose changes, and track their submissions (workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md)). They can never approve a change and never see accuracy tooling.
+2. **`board` — the accuracy reviewer.** Reviews the tool itself for accuracy: Resident Questions, flagging/correcting database inaccuracies, closing flags, decision history. Includes everything member can do.
+3. **`superuser` — the final approvers: the HOA president and the developer.** No clause change reaches residents without a superuser approving it; deletions require the *second* superuser. Self-approval of edits is a warned, audited, break-glass exception — never the norm. Also: user/role/tag management, imports/exports, audit log.
+
+**Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
+
 ## Authentication & User Roles
 
-Three hierarchical tiers stored in the `admin_users.role` column (July 2026 Roles Rebuild — see `sql/002_roles.sql`); each tier includes everything below it:
+Three hierarchical tiers stored in the `admin_users.role` column (July 2026 Roles Rebuild — see `sql/002_roles.sql`); each tier includes everything below it and maps 1:1 to THE LAW above:
 
-1. **member** — browse clauses, submit changes, change own password
-2. **board** — flags workflow, resident questions, analytics; set via the role dropdown on the Users page (superusers only)
-3. **superuser** — full access: add/delete/deactivate users, reset passwords, audit log, self-approve pending changes (with warning), set roles
+1. **member** — browse clauses, submit changes, flags + comments, My Submissions, change own password
+2. **board** — close flags, resident questions, pending history, analytics; set via the role dropdown on the Users page (superusers only)
+3. **superuser** — full access: approvals, add/delete/deactivate users, reset passwords, audit log, tag management, self-approve pending changes (with warning), set roles
 
 **The DB `role` column is the single source of truth.** Enforcement is per-request in `login_required` (deactivation/deletion/role changes take effect on the user's next request, not at next login). Route gates use `role_required("<min_role>")`; `superuser_required` is an alias for `role_required("superuser")`. Permission checks and UI visibility derive from the role context (`is_superuser`/`is_approver`/`role` template vars) — never hardcode names in templates.
 
