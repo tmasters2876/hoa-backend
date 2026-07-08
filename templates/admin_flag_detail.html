@@ -173,7 +173,7 @@
         <div class="clause-citation" style="margin-bottom:3px;">Status</div>
         <span class="flag-status-badge {{ flag.status }}">{{ flag.status | replace('_', ' ') }}</span>
       </div>
-      {% if flag.closed_by %}
+      {% if flag.closed_by and (is_superuser or is_approver) %}
       <div>
         <div class="clause-citation" style="margin-bottom:3px;">Closed By</div>
         <div style="font-size:13px;">{{ flag.closed_by }}</div>

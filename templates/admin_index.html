@@ -29,7 +29,7 @@
   <div class="stat-tile {% if pending_count > 0 %}warn{% endif %}">
     <div class="stat-label">Pending approval</div>
     <div class="stat-num">{{ pending_count }}</div>
-    <div class="stat-sub">awaiting second admin</div>
+    <div class="stat-sub">awaiting final approval</div>
   </div>
   <a href="{{ url_for('admin_flags') }}" style="text-decoration:none;">
     <div class="stat-tile {% if open_flags_count > 0 %}warn{% endif %}">
@@ -60,18 +60,22 @@
     </div>
     <div class="help-section">
       <h3>Clause Pages</h3>
-      <p>Every clause has its own page at <code>/admin/clauses/&lt;CLAUSE_ID&gt;</code> — click any clause ID badge or link anywhere in the console (browse cards, audit log, pending changes, flags, resident questions) to open it. The page shows the full clause, an edit form, its pending and decided changes with field diffs, any revision flags, and its change history — everything about one clause in one place.</p>
+      <p>Every clause has its own page at <code>/admin/clauses/&lt;CLAUSE_ID&gt;</code> — click any clause ID badge or link anywhere in the console to open it. The page shows the full clause, an edit form, its pending and decided changes with field diffs, any revision flags, and its change history — everything about one clause in one place.</p>
     </div>
     <div class="help-section">
       <h3>Approval Workflow</h3>
-      <p>Every clause change — add, edit, or delete — must be approved by a second admin before it takes effect in search results.</p>
+      <p>Every clause change — add, edit, or delete — requires <strong>final approval</strong> before it takes effect for residents.</p>
       <ul>
-        <li><strong>Submit for Approval</strong> — queues the change in Pending. The live clause is unchanged until approved.</li>
-        <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately, bypassing the two-person rule. Use only when no other admin is available. A warning is recorded in the audit log.</li>
+        <li><strong>Submit for Approval</strong> — queues the change for final approval. The live clause is unchanged until approved.</li>
+        {% if is_superuser %}
+        <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately, bypassing review. Use only when no other approver is available. A warning is recorded in the audit log.</li>
         <li>Deletions always require a second superuser to approve — self-approve is disabled for deletes.</li>
+        {% endif %}
+        {% if is_superuser or is_approver %}
         <li>The <strong>Pending</strong> nav item shows an orange badge when items are waiting. The page shows a field-by-field old → new diff for each change.</li>
-        <li>The Pending page's <strong>History tab</strong> (visible to board and up) lists every decided change with who approved or rejected it, when, and the rejection reason — the permanent governance record.</li>
-        <li><strong>My Submissions</strong> (in the sidebar, all users) shows your own submitted changes, their status, and the reviewer's rejection reason if declined.</li>
+        <li>The Pending page's <strong>History tab</strong> lists every decided change with the decision, timestamp, and rejection reason — the permanent governance record.</li>
+        {% endif %}
+        <li><strong>My Submissions</strong> (in the sidebar) shows your own submitted changes, their status, and the written rejection reason if declined.</li>
       </ul>
     </div>
     <div class="help-section">
@@ -83,7 +87,7 @@
         <li><strong>❌ Not Found</strong> — text not found on that page (&lt; 50%)</li>
         <li><strong>⏭ Skipped</strong> — PDF could not be accessed, or clause text was missing</li>
       </ul>
-      <p>Verification is <em>advisory only</em> — it informs the approver but never blocks submission or approval.</p>
+      <p>Verification is <em>advisory only</em> — it informs the final review but never blocks submission or approval.</p>
       <p>Three source fields are required on every clause: <strong>Citation</strong>, <strong>Page</strong>, and a <strong>Google Drive link</strong> (<code>https://drive.google.com/…</code>).</p>
     </div>
     <div class="help-section">
@@ -141,7 +145,7 @@
     </div>
     <div class="help-section">
       <h3>Admin Search</h3>
-      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query through the <em>same pipeline as the resident-facing Carrd chatbot</em> (relevance prefilter → full-corpus GPT prompt → cited answer) — but with flagging capability built in. This calls GPT, so it costs tokens; for a free corpus-selection preview use the Search Test panel instead. Admin searches are <em>not</em> logged to the resident question log.</p>
+      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query through the <em>same pipeline as the resident-facing Carrd chatbot</em> (relevance prefilter → full-corpus GPT prompt → cited answer) — but with flagging capability built in. This calls GPT, so it costs tokens; for a free corpus-selection preview use the Search Test panel instead.{% if is_superuser or is_approver %} Admin searches are <em>not</em> logged to the resident question log.{% endif %}</p>
       <ul>
         <li>The GPT answer is displayed at the top, followed by the cited clause cards that informed it.</li>
         <li>Each cited clause card has a <strong>Flag for Revision</strong> button to flag that specific clause.</li>
@@ -166,30 +170,38 @@
       <ul>
         <li><strong>Clause flag</strong> — marks a specific clause for revision discussion. Triggered from the clause browse list, the Search Test results, or the Admin Search cited clause cards. The 🏳 Flag button on a clause card turns to 🚩 Flagged once an open flag exists.</li>
         <li><strong>Topic flag</strong> — captures a full Q&amp;A result (question, GPT answer, and cited clause IDs) when the concern spans multiple clauses or a broader policy area.</li>
-        <li>Any logged-in user can create flags and add comments. Closing a flag requires the <strong>board</strong> role or higher.</li>
+        <li>Any logged-in user can create flags and add comments. Flags are closed by reviewers after deliberation.</li>
         <li>Cited clause IDs on a flag link straight to their clause pages, and each clause page lists the flags that reference it.</li>
         <li>Statuses: <strong>Open</strong> → <strong>In Review</strong> → closed as <strong>No Change</strong>, <strong>Changed</strong>, or <strong>Deferred</strong>.</li>
         <li>The flag detail page shows the full clause or topic snapshot, original flag notes, a threaded comment history, and status management. Comments are permanent — they cannot be edited or deleted.</li>
         <li>The <strong>Revision Flags</strong> nav item shows an orange badge when open flags exist.</li>
       </ul>
     </div>
+    {% if is_superuser %}
     <div class="help-section">
       <h3>Audit Log</h3>
       <p>Every action is recorded — clause adds, edits, deletes, approvals, rejections, embedding regenerations, tag renames/deletes, role changes, user changes, password resets, and CSV imports. Accessible via <strong>Audit Log</strong> in the sidebar (superusers only). Filter by user, action type, or date range. Clause IDs link to their clause pages. All timestamps are displayed in UTC.</p>
     </div>
     <div class="help-section">
       <h3>Roles &amp; User Management</h3>
-      <p>Accessible via the <strong>Users</strong> link in the sidebar. Three hierarchical roles — each includes everything below it, and each exists for one purpose:</p>
+      <p><strong>Superusers only.</strong> Accessible via the <strong>Users</strong> link in the sidebar. Three hierarchical roles — each includes everything below it, and each exists for one purpose:</p>
       <ul>
-        <li><strong>Member — the Document Revision Committee.</strong> Community volunteers (plus a board member and an ARC member) revising the governing documents: review clauses, flag and discuss what should change, propose changes, track them under My Submissions. Members never approve changes.</li>
-        <li><strong>Board — the accuracy reviewer.</strong> Reviews the tool itself for accuracy: watches Resident Questions, flags and corrects database inaccuracies, closes revision flags, reads the Pending History. Cannot approve clause edits or manage users.</li>
-        <li><strong>Superuser — the final approvers</strong> (the HOA president and the developer). Every change reaching residents passes a superuser's accuracy check; deletions need the second superuser. Also: user/role management, tags, imports, audit log.</li>
+        <li><strong>Member — the Document Revision Committee.</strong> Review clauses, flag and discuss what should change, propose changes, track them under My Submissions. Members never approve changes.</li>
+        <li><strong>Board — the accuracy reviewer.</strong> Watches Resident Questions, flags and corrects database inaccuracies, closes revision flags, reads the Pending History. Cannot approve clause edits or manage users.</li>
+        <li><strong>Superuser — holds final approval authority in the tool.</strong> Every change reaching residents passes a superuser's accuracy check; deletions need the second superuser. Also: user/role management, tags, imports, audit log. <em>In all member-facing language this is described only as "final approval" — never name who or how many (THE LAW, README.md).</em></li>
       </ul>
       <ul>
         <li>Superusers set roles from the Users page via the role dropdown. You cannot change your own role, and the last superuser cannot be demoted.</li>
         <li>Role changes and deactivations take effect on the user's <em>next request</em> — not at their next login.</li>
+      </ul>
+    </div>
+    {% endif %}
+    <div class="help-section">
+      <h3>Your Account</h3>
+      <ul>
+        <li>Change your own password from the <strong>Users</strong> page via <strong>Change Password</strong>.</li>
         <li>You cannot deactivate or delete your own account from the admin UI.</li>
-        <li>Login sessions expire after 8 hours. Login and logout events are recorded in the activity log.</li>
+        <li>Login sessions expire after 8 hours. Five failed sign-ins locks the account for 15 minutes.</li>
       </ul>
     </div>
   </div>

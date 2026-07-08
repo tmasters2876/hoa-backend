@@ -142,7 +142,7 @@
             {% if p.status == 'pending' %}<span class="pill stale">pending</span>
             {% elif p.status == 'approved' %}<span class="pill ok">approved</span>
             {% else %}<span class="pill stale">{{ p.status }}</span>{% endif %}
-            {% if p.reviewed_by %}<div class="muted" style="font-size:11px;">by {{ p.reviewed_by }}</div>{% endif %}
+            {% if p.reviewed_by and (is_superuser or is_approver) %}<div class="muted" style="font-size:11px;">by {{ p.reviewed_by }}</div>{% endif %}
             {% if p.review_notes %}<div style="font-size:11px; max-width:180px; word-break:break-word;"><span class="muted">Reason:</span> {{ p.review_notes }}</div>{% endif %}
           </td>
           <td>

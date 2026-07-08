@@ -18,7 +18,7 @@ flowchart TD
         B -->|"No — obvious fix"| E
     end
 
-    subgraph SUPERUSERS["🛡 Superusers — president & developer"]
+    subgraph APPROVAL["🗳 Final Approval"]
         E --> F{"Accuracy<br/>check"}
     end
 
@@ -29,10 +29,10 @@ flowchart TD
     style G fill:#e6f4ea,stroke:#34a853,color:#1e4620
     style H fill:#fdecea,stroke:#ea4335,color:#5f1a12
     style YOU fill:#f8f9fb,stroke:#c9cdd6
-    style SUPERUSERS fill:#f8f9fb,stroke:#c9cdd6
+    style APPROVAL fill:#f8f9fb,stroke:#c9cdd6
 ```
 
-You handle everything inside the first box. The final approval belongs to the two superusers (the HOA president and the developer) — that separation is deliberate and protects everyone, including you. A rejection is never a dead end: the reason is always written down, and the flag thread is where you regroup.
+You handle everything inside the first box. Final approval happens after you, by design — the committee proposes, it does not ratify, and that separation protects everyone, including you. A rejection is never a dead end: the reason is always written down, and the flag thread is where you regroup.
 
 ---
 
@@ -67,7 +67,7 @@ Flags are the committee's deliberation tool. A flag never changes any clause —
 - **Clause flag** — "this specific clause needs revision." Create it from the 🏳 button on any clause card or clause page.
 - **Topic flag** — "this whole policy area needs attention" (e.g. fencing rules scattered across four documents). Create it from the **Search** page after running a question: *Flag this topic* captures the question, the bot's answer, and every cited clause in one flag.
 - Every flag has a **comment thread**. Make your case there — comments are permanent (they can't be edited or deleted), which is exactly what makes the thread a real committee record.
-- Flags move **Open → In Review → Closed** (as *Changed*, *No Change*, or *Deferred*). Closing a flag is a board/superuser action — your job is to open them and argue them well.
+- Flags move **Open → In Review → Closed** (as *Changed*, *No Change*, or *Deferred*). Flags are closed by reviewers after deliberation — your job is to open them and argue them well.
 
 **Rule of thumb:** if it needs discussion first, flag it. If it's an obvious small fix (a typo, a wrong page number), skip to Step 3.
 
@@ -79,11 +79,11 @@ When the committee's direction is clear (or the fix is obvious), propose the act
 
 1. Open the clause (browse card or clause page) and edit the fields — text, summary, citation, tags, link, page.
 2. Click **Submit for Approval**. Three fields are always required: citation, page number, and a Google Drive source link.
-3. Your proposal goes into the **Pending** queue. **The live clause does not change** — residents keep seeing the current version until a superuser approves.
-4. The system automatically checks your text against the linked source PDF (the ✅/⚠️/❌ verification badge approvers see). It's advisory — it informs the approver, it never blocks you.
-5. New clauses work the same way (**Add Clause** panel), as do deletion requests (which require *both* superusers, not just one).
+3. Your proposal goes into the **Pending** queue. **The live clause does not change** — residents keep seeing the current version until final approval.
+4. The system automatically checks your text against the linked source PDF (a ✅/⚠️/❌ verification badge used during final review). It's advisory — it never blocks you.
+5. New clauses work the same way (**Add Clause** panel), as do deletion requests (which receive extra scrutiny during final approval).
 
-You cannot approve anything — including your own submissions. That's not a limitation, it's the integrity model: every change that reaches residents has passed through at least two people.
+You cannot approve anything — including your own submissions. That's not a limitation, it's the integrity model: nothing reaches residents without final approval.
 
 ---
 
@@ -103,9 +103,9 @@ Approved changes reach the resident-facing chatbot automatically within about an
 
 | Not yours | Whose it is | Why |
 |---|---|---|
-| Approve / reject buttons | Superusers (president + developer) | Final accuracy check — the two-person rule |
-| Resident Questions page | Board and up | Accuracy monitoring of the resident tool, separate from revision work |
-| User, role, and tag management | Superusers | Administrative, not deliberative |
+| Approve / reject buttons | Final approval | Every change is ratified outside the committee — you propose, final approval decides |
+| Resident Questions page | Accuracy reviewers | Monitoring the resident tool's accuracy, separate from revision work |
+| User and tag management | Administration | Housekeeping of the tool itself, not deliberative |
 
 ---
 

@@ -82,10 +82,9 @@
           {% else %}
             <span class="pill stale">{{ entry.status }}</span>
           {% endif %}
-          {% if entry.reviewed_by %}
+          {% if entry.reviewed_at %}
           <div class="muted" style="font-size:11px; margin-top:4px;">
-            by {{ entry.reviewed_by }}<br>
-            {{ entry.reviewed_at[:16].replace("T", " ") if entry.reviewed_at else '' }}
+            decided {{ entry.reviewed_at[:16].replace("T", " ") }}
           </div>
           {% endif %}
           {% if entry.review_notes %}

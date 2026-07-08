@@ -26,12 +26,17 @@ Community volunteers, plus a board member and an ARC member, revising the govern
 ### `board` — the accuracy reviewer
 Reviews the *tool itself* for accuracy: watches what residents actually ask (Resident Questions), flags and corrects inaccuracies in the clause database that powers the front-end search tool, closes revision flags, and reads the decision history. Includes everything `member` can do.
 
-### `superuser` — the final approvers (the HOA president and the developer)
-The two superusers are the final accuracy check on everything: **no clause change reaches residents without a superuser approving it**, and deletions require the *second* superuser. They also run user/role management, tag management, imports/exports, and the audit log. Self-approval of edits exists as a warned, audited, break-glass exception — it is never the norm.
+### `superuser` — final approval authority
+Superusers are the final accuracy check on everything: **no clause change reaches residents without a superuser approving it**, and deletions require a *second* superuser. They also run user/role management, tag management, imports/exports, and the audit log. Self-approval of edits exists as a warned, audited, break-glass exception — it is never the norm.
+
+### The Final Approval clause
+
+In **all member-facing language** — MEMBER_WORKFLOW.md, the in-console Guide, the Help & Reference panel as seen by non-superusers, My Submissions, and any future member surface — the approval step is described only as **"final approval."** Never name who approves, how many approvers there are, or what mechanism is used. This ambiguity is deliberate and load-bearing: "final approval" legally corresponds to a board final vote, and where the governing documents require it, a 2/3 property-owner vote — and the internal mechanics behind it are expected to change. Member-facing language must never need to change with them.
 
 ### Standing rules derived from the mandate
 
 - The `admin_users.role` column is the single source of truth for permissions. Enforcement is per-request.
+- Member-facing surfaces say only "final approval" (see the Final Approval clause above) and never reveal reviewer identities or superuser/board tooling.
 - Every new feature must serve the Revision mission, the Accuracy mission, or administration of the tool itself — or it doesn't get built.
 - No path may ever let a member-proposed change reach residents without superuser approval.
 - Deliberation (flags, comments) is permanent and append-only — it is the committee's record.

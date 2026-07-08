@@ -164,9 +164,11 @@ The tool has exactly two missions: **Revision** (support the Document Revision C
 
 1. **`member` — the Document Revision Committee.** Community volunteers + a board member + an ARC member revising the governing documents. They review current clauses, flag and discuss what should change, propose changes, and track their submissions (workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md)). They can never approve a change and never see accuracy tooling.
 2. **`board` — the accuracy reviewer.** Reviews the tool itself for accuracy: Resident Questions, flagging/correcting database inaccuracies, closing flags, decision history. Includes everything member can do.
-3. **`superuser` — the final approvers: the HOA president and the developer.** No clause change reaches residents without a superuser approving it; deletions require the *second* superuser. Self-approval of edits is a warned, audited, break-glass exception — never the norm. Also: user/role/tag management, imports/exports, audit log.
+3. **`superuser` — final approval authority.** No clause change reaches residents without a superuser approving it; deletions require a *second* superuser. Self-approval of edits is a warned, audited, break-glass exception — never the norm. Also: user/role/tag management, imports/exports, audit log.
 
-**Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
+**The Final Approval clause:** in ALL member-facing language (MEMBER_WORKFLOW.md / the in-console Guide, the Help panel as non-superusers see it, My Submissions, any future member surface) the approval step is described only as **"final approval"** — never who approves, how many, or by what mechanism, and never reviewer identities on decided items. The ambiguity is deliberate: "final approval" legally maps to a board final vote (or a 2/3 property-owner vote where required), and the internal mechanics will change without member-facing language needing to.
+
+**Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; member-facing surfaces obey the Final Approval clause; deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
 
 ## Authentication & User Roles
 
