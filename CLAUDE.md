@@ -142,7 +142,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 | 9 | Builders Guidelines |
 
 ### Other tables
-- `admin_users` — `id`, `username`, `password_hash` (bcrypt rounds=12), `is_active`, `must_change_password`, `is_approver`
+- `admin_users` — `id`, `username`, `password_hash` (bcrypt rounds=12), `is_active`, `must_change_password`, `role` ('superuser'|'board'|'member'; `is_approver` is a deprecated mirror)
 - `pending_changes` — two-person approval workflow; fields: `clause_id`, `submitted_by`, `action` ('edit'|'add'|'delete'), `proposed_changes` (jsonb), `original_values` (jsonb), `status`, `reviewed_by`
 - `clause_audit_log` — append-only, every clause action recorded, no deletes ever
 - `user_activity_log` — login/logout/action tracking with real IPs
@@ -154,13 +154,15 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 
 ## Authentication & User Roles
 
-1. **Regular user** — browse clauses, change own password
-2. **Approver** (`is_approver=True`) — board members who can manage CCR revision flags; granted/revoked by superusers only
-3. **Superuser** (in `SUPERUSERS` set in `admin_app.py` ~line 88) — full access: add/delete/deactivate users, reset passwords, audit log, self-approve pending changes (with warning), grant/revoke Approver role
+Three hierarchical tiers stored in the `admin_users.role` column (July 2026 Roles Rebuild — see `sql/002_roles.sql`); each tier includes everything below it:
 
-**Current superusers**: `{'tmasters', 'cmasters', 'admin'}` — adding a new superuser is a one-line change in `admin_app.py`.
+1. **member** — browse clauses, submit changes, change own password
+2. **board** — flags workflow, resident questions, analytics; set via the role dropdown on the Users page (superusers only)
+3. **superuser** — full access: add/delete/deactivate users, reset passwords, audit log, self-approve pending changes (with warning), set roles
 
-**Permission checks and UI visibility must derive from the `SUPERUSERS` set, not hardcoded name lists in templates.**
+**The DB `role` column is the single source of truth.** Enforcement is per-request in `login_required` (deactivation/deletion/role changes take effect on the user's next request, not at next login). Route gates use `role_required("<min_role>")`; `superuser_required` is an alias for `role_required("superuser")`. Permission checks and UI visibility derive from the role context (`is_superuser`/`is_approver`/`role` template vars) — never hardcode names in templates.
+
+**Break-glass**: if roles are ever wrong in the DB, fix with one Supabase UPDATE (`UPDATE admin_users SET role='superuser' WHERE username='...'`). `LEGACY_SUPERUSERS` in `admin_app.py` is only a mid-session fallback for Supabase outages, not a permission source. The `is_approver` column is a deprecated mirror kept in sync as a rollback aid — drop it in a later cleanup.
 
 Brute-force protection: 5 failed attempts = 15-minute lockout (keyed on username + IP). Deletions require a second superuser — no self-approval on deletes.
 
@@ -282,5 +284,5 @@ Then: `rm /tmp/gen_hash.py`
 - Both services deploy from the same repo on push
 - Always `SELECT` before any `INSERT` to check for existing rows
 - Mac is Apple Silicon (arm64) running macOS
-- `SUPERUSERS` set in `admin_app.py` is the single source of truth for superuser permissions — do not hardcode names in templates
+- The `admin_users.role` column is the single source of truth for permissions (see Authentication & User Roles) — do not hardcode names in templates
 - Token concern (partially addressed by the `filter_relevant_clauses()` pre-filter): the corpus is still fetched/cached in full, and vague/broad questions still fall back to the complete corpus by design — if it keeps growing, revisit `min_results`/`min_score` in `ask_gpt.py` or reconsider the admin-side embeddings/`match_clauses` RPC for the resident-facing pipeline too
