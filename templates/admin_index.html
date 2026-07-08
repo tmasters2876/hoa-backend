@@ -114,9 +114,9 @@
     </div>
     <div class="help-section">
       <h3>Search Test</h3>
-      <p>Runs a live query using the same logic as the production chatbot — both semantic (vector) and keyword searches execute simultaneously against the Supabase <code>match_clauses</code> RPC. Results are displayed in two columns: <strong>Vector Matches</strong> and <strong>Keyword Matches</strong>.</p>
-      <p>Use this to verify a question surfaces the expected clauses before testing in the resident-facing frontend. Only approved clauses with valid embeddings appear in vector results.</p>
-      <p>Each result row includes a <strong>Flag</strong> button — use it to flag a specific clause for revision directly from search results without leaving this page.</p>
+      <p>The primary result is a <strong>Prefilter Preview</strong>: it runs the exact scoring loop the resident bot uses (<code>filter_relevant_clauses</code>) and shows which clauses would be selected for a question, with per-clause scores — or whether the full-corpus <strong>FALLBACK</strong> would fire. GPT is never called, so this costs nothing; the full end-to-end test (which does call GPT) is the Search page.</p>
+      <p>A collapsed <strong>Legacy search</strong> section still offers the old vector + keyword searches. The resident bot uses <em>neither</em> — they remain only as admin tools (e.g. finding near-duplicate clauses).</p>
+      <p>Each legacy result row includes a <strong>Flag</strong> button — use it to flag a specific clause for revision directly from search results without leaving this page.</p>
     </div>
     <div class="help-section">
       <h3>Admin Search</h3>
@@ -290,7 +290,7 @@
     {# Search Test #}
     <div class="panel">
       <h2>Search Test</h2>
-      <p class="muted">Live semantic + keyword search using <code>{{ embedding_model }}</code>.</p>
+      <p class="muted">Previews which clauses the resident bot's prefilter selects — the real production pipeline. No GPT call.</p>
       <form method="get" action="{{ url_for('admin_home') }}" class="stack">
         <div>
           <label for="test_query">Question</label>
@@ -464,7 +464,52 @@
       <div class="panel">
         <h2>Search Test Results</h2>
         <p class="muted">Question: {{ search_test.question }}</p>
-        <div class="test-grid">
+
+        {# Prefilter preview — the production pipeline #}
+        <h3 style="margin-top:12px;">Prefilter Preview <span class="muted" style="font-weight:400;font-size:12px;">(what the resident bot actually does)</span></h3>
+        {% if not search_test.prefilter_enabled %}
+          <p><span class="pill stale">PREFILTER DISABLED</span> <code>ENABLE_CLAUSE_PREFILTER=false</code> — production currently sends the full corpus for every question; the preview below shows what the prefilter <em>would</em> select.</p>
+        {% endif %}
+        {% if search_test.prefilter %}
+          {% set pf = search_test.prefilter %}
+          {% if pf.fallback_triggered %}
+            <p style="margin:8px 0;"><span class="pill stale">FALLBACK</span>
+              Only {{ pf.matched_count }} clause{{ 's' if pf.matched_count != 1 }} scored ≥ {{ pf.min_score }} (threshold: {{ pf.min_results }}) —
+              production sends the <strong>full corpus of {{ pf.corpus_size }} clauses</strong> for this question.</p>
+          {% else %}
+            <p style="margin:8px 0;"><span class="pill ok">FILTERED</span>
+              Prefilter selects <strong>{{ pf.matched_count }} of {{ pf.corpus_size }}</strong> clauses for this question.</p>
+          {% endif %}
+          {% if pf.top %}
+          <table class="result-table">
+            <thead>
+              <tr><th>Score</th><th>Clause ID</th><th>Document</th><th>Citation</th><th>Summary</th><th>Tags</th></tr>
+            </thead>
+            <tbody>
+              {% for row in pf.top %}
+              <tr>
+                <td><strong>{{ row.score }}</strong></td>
+                <td style="font-family:ui-monospace,monospace;font-size:12px;">{{ row.clause_id }}</td>
+                <td style="font-size:12px;max-width:180px;word-break:break-word;">{{ row.document }}</td>
+                <td style="font-size:12px;">{{ row.citation }}</td>
+                <td style="font-size:12px;max-width:260px;">{{ row.summary }}</td>
+                <td style="font-size:11px;color:var(--muted);">{{ row.tags }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% if pf.matched_count > 25 %}<p class="muted" style="font-size:12px;">Showing top 25 of {{ pf.matched_count }}.</p>{% endif %}
+          {% else %}
+          <p class="muted">No clauses scored ≥ {{ pf.min_score }} for this question.</p>
+          {% endif %}
+          <p class="muted" style="font-size:12px;">GPT is never called by this preview — it shows corpus selection only. For an end-to-end answer test (costs tokens), use the Search page.</p>
+        {% else %}
+          <p class="muted">Prefilter preview unavailable — check server logs.</p>
+        {% endif %}
+
+        <details style="margin-top:16px;">
+        <summary style="cursor:pointer;font-weight:600;">Legacy vector + keyword search <span class="muted" style="font-weight:400;">(NOT used by the resident bot)</span></summary>
+        <div class="test-grid" style="margin-top:10px;">
           <div>
             <h3>Vector Matches</h3>
             <table class="result-table">
@@ -516,6 +561,7 @@
             </table>
           </div>
         </div>
+        </details>
       </div>
     {% endif %}
 
