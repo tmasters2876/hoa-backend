@@ -2,7 +2,7 @@
 
 **Created:** July 2026
 **Source:** Full admin console review (both CLAUDE.md files, `admin_app.py` all 24 routes, `app.py`, `ask_gpt.py`, `services.py`, all 10 templates)
-**Status:** Planning document — nothing here is implemented yet.
+**Status:** Priority Phase COMPLETE (July 2026) — #11 (logging + board-gated questions page), Roles Rebuild (absorbing #9/#10), #5 diff view, #1 cache TTL (Part B skipped), #19 honest search test (Option B) are all live. Remaining Future Phase items below are unimplemented; `build_field_diff()` in admin_app.py is the reusable seam #6/#14 anticipated.
 
 This document describes improvements to the PLCA HOA admin console and public chatbot backend. It is written so a developer who has **not** read the codebase can execute any item. The **Priority Phase** (in order: #11 → Roles Rebuild → #5 → #1 → #19) should be implemented first. The **Roles Rebuild** is a new item (July 2026 owner decision) that absorbs #9 and #10 and replaces the ad-hoc superuser-set + `is_approver` model with a three-tier `role` column. The remaining items are grouped by audience as **Future Phases** — treat those as a **menu, not a commitment**: for a volunteer-run HOA tool, the Priority Phase plus (eventually) #12 may be everything this project truly needs. Some items (e.g. #8 document registry) solve problems that occur roughly once a year and can reasonably stay code edits forever.
 
