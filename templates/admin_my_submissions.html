@@ -1,0 +1,115 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">My Submissions</span>
+  {% if total_count is defined %}
+  <span class="topbar-sub">{{ total_count }} submission{{ 's' if total_count != 1 else '' }}</span>
+  {% endif %}
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .ms-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .ms-table th, .ms-table td {
+    text-align:left; vertical-align:top;
+    border-bottom:1px solid var(--border); padding:8px 12px;
+  }
+  .ms-table th {
+    font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.05em; color:var(--muted); white-space:nowrap;
+    background:var(--surface-2);
+  }
+  .ms-table td.mono { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); white-space:nowrap; }
+  .diff-row { margin-bottom: 6px; }
+  .diff-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); }
+  .diff-old { color: var(--danger); text-decoration: line-through; font-size: 12px; }
+  .diff-new { color: var(--accent); font-size: 12px; }
+  .diff-val { max-height: 140px; overflow-y: auto; word-break: break-word; }
+</style>
+
+<div class="panel">
+  <p class="muted" style="margin-bottom:14px;">
+    Your submitted changes and what happened to them. Rejected submissions include the reviewer's reason.
+  </p>
+
+  {% if entries %}
+  <div style="overflow-x:auto;">
+  <table class="ms-table">
+    <thead>
+      <tr>
+        <th>Submitted</th>
+        <th>Action</th>
+        <th>Clause</th>
+        <th>What you proposed</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr>
+        <td class="mono">{{ entry.submitted_at[:16].replace("T", " ") if entry.submitted_at else "—" }}</td>
+        <td>{{ entry.action }}</td>
+        <td class="mono">
+          {% set pc_id = (entry.proposed_changes.get("clause_id") if entry.proposed_changes else none) or (entry.original_values.get("clause_id") if entry.original_values else none) %}
+          {% if pc_id and entry.clause_id %}<a href="{{ url_for('clause_detail', key=entry.clause_id) }}">{{ pc_id }}</a>
+          {% elif pc_id %}{{ pc_id }}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if entry.action == 'delete' %}
+            <span class="muted">requested deletion</span>
+          {% else %}
+            {% for d in entry.field_diffs %}
+            <div class="diff-row">
+              <div class="diff-label">{{ d.field }}</div>
+              {% if d.old is not none %}<div class="diff-old diff-val">{{ d.old }}</div>{% endif %}
+              <div class="diff-new diff-val">{{ d.new if d.new is not none else "—" }}</div>
+            </div>
+            {% else %}
+            <span class="muted">no field changes</span>
+            {% endfor %}
+          {% endif %}
+        </td>
+        <td style="min-width:160px;">
+          {% if entry.status == 'pending' %}
+            <span class="pill stale">awaiting review</span>
+          {% elif entry.status == 'approved' %}
+            <span class="pill ok">approved</span>
+          {% else %}
+            <span class="pill stale">{{ entry.status }}</span>
+          {% endif %}
+          {% if entry.reviewed_by %}
+          <div class="muted" style="font-size:11px; margin-top:4px;">
+            by {{ entry.reviewed_by }}<br>
+            {{ entry.reviewed_at[:16].replace("T", " ") if entry.reviewed_at else '' }}
+          </div>
+          {% endif %}
+          {% if entry.review_notes %}
+          <div style="font-size:12px; margin-top:6px; max-width:220px; word-break:break-word;">
+            <span class="muted">Reason:</span> {{ entry.review_notes }}
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if total_pages > 1 %}
+  <div class="button-row" style="margin-top:14px; align-items:center; gap:10px;">
+    {% if prev_url %}<a href="{{ prev_url }}" style="font-size:13px;">← Newer</a>{% endif %}
+    <span class="muted" style="font-size:12px;">Page {{ page }} of {{ total_pages }}</span>
+    {% if next_url %}<a href="{{ next_url }}" style="font-size:13px;">Older →</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="muted">You haven't submitted any changes yet. Edit a clause from the browse page to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}

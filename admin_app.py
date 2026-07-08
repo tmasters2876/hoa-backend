@@ -892,16 +892,20 @@ def create_clause():
 @app.post("/admin/clauses/<clause_id>/update")
 @login_required
 def update_clause(clause_id: str):
+    # form may carry a same-app "next" path (e.g. the clause permalink page)
+    nxt = request.form.get("next", "")
+    back = redirect(nxt) if nxt.startswith("/admin") else redirect(url_for("admin_home"))
+
     errors = _validate_source_fields(request.form)
     if errors:
         for msg in errors:
             flash(msg, "error")
-        return redirect(url_for("admin_home"))
+        return back
 
     existing = fetch_clause(clause_id)
     if not existing:
         flash(f"Clause {clause_id} was not found.", "error")
-        return redirect(url_for("admin_home"))
+        return back
 
     self_approve = bool(request.form.get("self_approve")) and _is_superuser_request()
 
@@ -949,7 +953,7 @@ def update_clause(clause_id: str):
         log_audit_event(action="change_submitted", clause_id=payload.get("clause_id") or existing.get("clause_id"),
                         record_id=clause_id, notes=f"edit; {verif_note}")
         flash("Edit submitted for approval — the live clause is unchanged until a second admin approves.", "success")
-    return redirect(url_for("admin_home"))
+    return back
 
 
 @app.post("/admin/clauses/<clause_id>/update-json")
@@ -1681,13 +1685,24 @@ def change_own_password():
 # ── Pending changes routes ─────────────────────────────────────────────────────
 
 @app.get("/admin/pending")
-@superuser_required
+@role_required("board")
 def admin_pending():
+    """Two tabs: the live queue (?status=pending, superuser-only — it has
+    approve/reject actions) and History (?status=history, board-and-up —
+    decided changes with reviewer, timestamp, and rejection notes)."""
+    view = request.args.get("status", "pending").strip()
+    if view != "history" and not _is_superuser_request():
+        return redirect(url_for("admin_pending", status="history"))
+
     action_filter = request.args.get("action_filter", "").strip()
     who_filter = request.args.get("who", "").strip()
     page = max(1, to_int_or_none(request.args.get("page")) or 1)
 
-    query = supabase().from_("pending_changes").select("*", count="exact").eq("status", "pending")
+    query = supabase().from_("pending_changes").select("*", count="exact")
+    if view == "history":
+        query = query.neq("status", "pending")
+    else:
+        query = query.eq("status", "pending")
     if action_filter:
         query = query.eq("action", action_filter)
     if who_filter:
@@ -1695,7 +1710,8 @@ def admin_pending():
 
     start = (page - 1) * PENDING_PAGE_SIZE
     end = start + PENDING_PAGE_SIZE - 1
-    result = query.order("submitted_at", desc=False).range(start, end).execute()
+    order_col = "reviewed_at" if view == "history" else "submitted_at"
+    result = query.order(order_col, desc=(view == "history")).range(start, end).execute()
 
     entries = result.data or []
     total_count = result.count or 0
@@ -1709,6 +1725,8 @@ def admin_pending():
 
     pending_filters = {"action_filter": action_filter, "who": who_filter}
     query_args = {k: v for k, v in pending_filters.items() if v}
+    if view == "history":
+        query_args["status"] = "history"
 
     prev_url = None
     next_url = None
@@ -1726,6 +1744,7 @@ def admin_pending():
         prev_url=prev_url,
         next_url=next_url,
         filters=pending_filters,
+        view=view,
         current_username=session.get("username"),
     )
 
@@ -1818,6 +1837,278 @@ def reject_pending(change_id: str):
     )
     flash("Change rejected.", "success")
     return redirect(url_for("admin_pending"))
+
+
+# ── Clause CSV export (#3) ────────────────────────────────────────────────────
+
+EXPORT_HEADERS = ["id", "status"] + TEMPLATE_HEADERS
+
+
+@app.get("/admin/export")
+@login_required
+def export_clauses():
+    """CSV of the currently filtered browse view (same q/tag/document/stale
+    params), unpaginated. Column order = import template + id/status so
+    export → edit → re-import round-trips. The embedding column is excluded
+    (1536 floats of noise)."""
+    keyword = request.args.get("q", "").strip()
+    tag = request.args.get("tag", "").strip()
+    document = request.args.get("document", "").strip()
+    stale = request.args.get("stale", "").strip() == "true"
+
+    rows, page_size, offset = [], 1000, 0
+    while True:
+        query = supabase().from_("clauses").select(CLAUSE_COLUMNS)
+        if keyword:
+            query = query.or_(build_keyword_filter(keyword))
+        if tag:
+            query = query.contains("tags", [tag])
+        if document:
+            query = query.eq("document", document)
+        if stale:
+            query = query.is_("embedding", "null")
+        batch = (
+            query.order("created_at", desc=True)
+            .range(offset, offset + page_size - 1).execute()
+        ).data or []
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=EXPORT_HEADERS, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({**{k: row.get(k) for k in EXPORT_HEADERS if k != "tags"},
+                         "tags": serialize_tags(row.get("tags"))})
+
+    log_user_activity(session.get("username"), "csv_export")
+    filename = f"clauses_export{'_' + tag if tag else ''}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Tag Management (#7) ───────────────────────────────────────────────────────
+
+def _fetch_all_clause_tags() -> list[dict]:
+    """id, clause_id, tags for every clause row (all statuses), paginated."""
+    rows, page_size, offset = [], 1000, 0
+    while True:
+        batch = (
+            supabase().from_("clauses").select("id,clause_id,tags")
+            .range(offset, offset + page_size - 1).execute()
+        ).data or []
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return rows
+
+
+@app.get("/admin/tags")
+@superuser_required
+def admin_tags():
+    from collections import Counter
+    counts = Counter()
+    for row in _fetch_all_clause_tags():
+        for t in row.get("tags") or []:
+            t = (t or "").strip()
+            if t:
+                counts[t] += 1
+    tags = sorted(counts.items(), key=lambda kv: kv[0].lower())
+    mixed_case = [t for t, _ in tags if t != t.upper()]
+    return render_template("admin_tags.html", tags=tags, mixed_case_count=len(mixed_case))
+
+
+def _retag_clauses(old_tag: str, new_tag: str | None) -> int:
+    """Replace old_tag with new_tag (or remove it when new_tag is None)
+    across every clause, deduping while preserving order. Audit-logs each
+    touched clause. Returns the number of clauses updated."""
+    touched = 0
+    for row in _fetch_all_clause_tags():
+        tags = [t for t in (row.get("tags") or [])]
+        if old_tag not in tags:
+            continue
+        new_tags = []
+        for t in tags:
+            replacement = new_tag if t == old_tag else t
+            if replacement and replacement not in new_tags:
+                new_tags.append(replacement)
+        supabase().from_("clauses").update({"tags": new_tags}).eq("id", row["id"]).execute()
+        log_audit_event(
+            action="updated",
+            clause_id=row.get("clause_id"),
+            record_id=row["id"],
+            field_changed="tags",
+            old_value=serialize_tags(tags),
+            new_value=serialize_tags(new_tags),
+            notes="tag management",
+        )
+        touched += 1
+    return touched
+
+
+@app.post("/admin/tags/rename")
+@superuser_required
+def rename_tag():
+    old_tag = (request.form.get("old_tag") or "").strip()
+    # UPPERCASE is the corpus convention (owner decision, July 2026)
+    new_tag = (request.form.get("new_tag") or "").strip().upper()
+    if not old_tag or not new_tag:
+        flash("Both the existing tag and the new name are required.", "error")
+        return redirect(url_for("admin_tags"))
+    if old_tag == new_tag:
+        flash("New name is identical — nothing to do.", "success")
+        return redirect(url_for("admin_tags"))
+    touched = _retag_clauses(old_tag, new_tag)
+    log_audit_event(action="tag_renamed", new_value=f"{old_tag} → {new_tag} ({touched} clauses)")
+    flash(
+        f"Renamed '{old_tag}' → '{new_tag}' across {touched} clause{'s' if touched != 1 else ''}. "
+        "Applied immediately (no two-person approval); reaches residents within the cache TTL (~1h).",
+        "success",
+    )
+    return redirect(url_for("admin_tags"))
+
+
+@app.post("/admin/tags/delete")
+@superuser_required
+def delete_tag():
+    old_tag = (request.form.get("old_tag") or "").strip()
+    if not old_tag:
+        flash("No tag given.", "error")
+        return redirect(url_for("admin_tags"))
+    touched = _retag_clauses(old_tag, None)
+    log_audit_event(action="tag_deleted", new_value=f"{old_tag} ({touched} clauses)")
+    flash(
+        f"Removed '{old_tag}' from {touched} clause{'s' if touched != 1 else ''}. "
+        "Applied immediately; reaches residents within the cache TTL (~1h).",
+        "success",
+    )
+    return redirect(url_for("admin_tags"))
+
+
+# ── My Submissions (#6) ───────────────────────────────────────────────────────
+
+@app.get("/admin/my-submissions")
+@login_required
+def my_submissions():
+    """Every user can see their own pending/approved/rejected changes with
+    reviewer notes. Deliberately NOT the /admin/pending route — that page
+    carries approve/reject actions that stay superuser-only."""
+    page = max(1, to_int_or_none(request.args.get("page")) or 1)
+
+    query = (
+        supabase().from_("pending_changes").select("*", count="exact")
+        .eq("submitted_by", session.get("username"))
+    )
+    start = (page - 1) * PENDING_PAGE_SIZE
+    end = start + PENDING_PAGE_SIZE - 1
+    result = query.order("submitted_at", desc=True).range(start, end).execute()
+
+    entries = result.data or []
+    total_count = result.count or 0
+    total_pages = max(1, math.ceil(total_count / PENDING_PAGE_SIZE))
+    for entry in entries:
+        entry["field_diffs"] = build_field_diff(entry)
+
+    prev_url = url_for("my_submissions", page=page - 1) if page > 1 else None
+    next_url = url_for("my_submissions", page=page + 1) if page < total_pages else None
+
+    return render_template(
+        "admin_my_submissions.html",
+        entries=entries,
+        total_count=total_count,
+        total_pages=total_pages,
+        page=page,
+        prev_url=prev_url,
+        next_url=next_url,
+    )
+
+
+# ── Clause permalink (#18) ────────────────────────────────────────────────────
+
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+@app.get("/admin/clauses/<key>")
+@login_required
+def clause_detail(key: str):
+    """Canonical page per clause. Accepts either the row uuid or the human
+    clause_id (e.g. DECL_27_08); uuid URLs redirect to the clause_id form."""
+    clause = None
+    if _UUID_RE.fullmatch(key):
+        clause = fetch_clause(key)
+        if clause and clause.get("clause_id") and clause["clause_id"] != key:
+            return redirect(url_for("clause_detail", key=clause["clause_id"]))
+    if clause is None:
+        rows = (
+            supabase().from_("clauses").select(CLAUSE_COLUMNS)
+            .eq("clause_id", key).limit(1).execute()
+        ).data or []
+        clause = rows[0] if rows else None
+    if clause is None:
+        flash(f"Clause '{key}' was not found.", "error")
+        return redirect(url_for("admin_home"))
+
+    clause["tags_csv"] = serialize_tags(clause.get("tags"))
+    clause["embedding_stale"] = clause_has_stale_embedding(clause)
+    uuid_id = str(clause["id"])
+    text_id = clause.get("clause_id")
+
+    history = []
+    try:
+        history = (
+            supabase().from_("clause_audit_log").select("*")
+            .eq("record_id", uuid_id)
+            .order("changed_at", desc=True).limit(50).execute()
+        ).data or []
+    except Exception as e:
+        print(f"[clause-detail] history fetch failed: {e}")
+
+    flags = []
+    try:
+        direct = (
+            supabase().from_("clause_flags").select("*")
+            .eq("clause_id", uuid_id).execute()
+        ).data or []
+        topical = []
+        if text_id:
+            topical = (
+                supabase().from_("clause_flags").select("*")
+                .contains("cited_clause_ids", [text_id]).execute()
+            ).data or []
+        seen = set()
+        for f in direct + topical:
+            if f["id"] not in seen:
+                seen.add(f["id"])
+                flags.append(f)
+        flags.sort(key=lambda f: f.get("created_at") or "", reverse=True)
+    except Exception as e:
+        print(f"[clause-detail] flags fetch failed: {e}")
+
+    pending = []
+    try:
+        pending = (
+            supabase().from_("pending_changes").select("*")
+            .eq("clause_id", uuid_id)
+            .order("submitted_at", desc=True).limit(20).execute()
+        ).data or []
+        for p in pending:
+            p["field_diffs"] = build_field_diff(p)
+    except Exception as e:
+        print(f"[clause-detail] pending fetch failed: {e}")
+
+    return render_template(
+        "admin_clause_detail.html",
+        clause=clause,
+        history=history,
+        flags=flags,
+        pending=pending,
+    )
 
 
 # ── Resident Questions (#11) ─────────────────────────────────────────────────

@@ -149,7 +149,7 @@
       <div class="clause-citation" style="margin-bottom:6px;">Cited Clauses</div>
       <div class="pill-row">
         {% for cid in flag.cited_clause_ids %}
-          <span class="pill">{{ cid }}</span>
+          <a class="pill" href="{{ url_for('clause_detail', key=cid) }}">{{ cid }}</a>
         {% endfor %}
       </div>
     </div>

@@ -907,6 +907,15 @@
             Search
           </a>
 
+          <a href="{{ url_for('my_submissions') }}"
+             class="nav-item {% if request.endpoint == 'my_submissions' %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 2v8M5 7l3 3 3-3"/>
+              <path d="M3 13h10"/>
+            </svg>
+            My Submissions
+          </a>
+
           <a href="{{ url_for('admin_flags') }}"
              class="nav-item {% if request.endpoint in ['admin_flags', 'admin_flag_detail'] %}active{% endif %}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -929,7 +938,7 @@
           </a>
           {% endif %}
 
-          {% if is_superuser %}
+          {% if is_superuser or is_approver %}
           <a href="{{ url_for('admin_pending') }}"
              class="nav-item {% if request.endpoint == 'admin_pending' %}active{% endif %}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -941,6 +950,9 @@
             <span class="nav-badge">{{ pending_count }}</span>
             {% endif %}
           </a>
+          {% endif %}
+
+          {% if is_superuser %}
 
           <a href="{{ url_for('admin_audit') }}"
              class="nav-item {% if request.endpoint == 'admin_audit' %}active{% endif %}">
@@ -948,6 +960,15 @@
               <path d="M2 4h12M2 8h8M2 12h6"/>
             </svg>
             Audit Log
+          </a>
+
+          <a href="{{ url_for('admin_tags') }}"
+             class="nav-item {% if request.endpoint == 'admin_tags' %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 2h5l7 7-5 5-7-7z"/>
+              <circle cx="5.5" cy="5.5" r="1"/>
+            </svg>
+            Tags
           </a>
           {% endif %}
 

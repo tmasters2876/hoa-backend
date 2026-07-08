@@ -245,6 +245,16 @@
       </form>
     </details>
 
+    {# Export CSV #}
+    <div class="panel">
+      <h2>Export CSV</h2>
+      <p class="muted">Downloads the clause database as CSV, honoring the current browse filters (search, tag, document, stale). Columns match the import template so export → edit → re-import round-trips.</p>
+      <a href="{{ url_for('export_clauses', q=filters.q, tag=filters.tag, document=filters.document, stale=filters.stale) }}"
+         class="ghost green" style="display:inline-block; font-size:13px; padding:8px 16px; border:1px solid var(--border); border-radius:8px; text-decoration:none;">
+        ⬇ Download CSV{% if filters.q or filters.tag or filters.document or filters.stale %} (filtered){% endif %}
+      </a>
+    </div>
+
     {# Import CSV — Add #}
     {% if is_superuser %}
     <div class="panel">
@@ -340,7 +350,7 @@
               {% else %}
                 <span class="status-dot approved"></span>
               {% endif %}
-              <span class="clause-id-badge">{{ clause.clause_id or clause.id }}</span>
+              <a class="clause-id-badge" href="{{ url_for('clause_detail', key=clause.clause_id or clause.id) }}" title="Open clause page">{{ clause.clause_id or clause.id }}</a>
               {% if clause.embedding_stale %}<span class="badge-stale-inline">⚠️ Stale</span>{% endif %}
               <span class="clause-doc">{{ clause.document or "No document" }}{% if clause.page %} &bull; p.{{ clause.page }}{% endif %}</span>
               {% if clause.link %}

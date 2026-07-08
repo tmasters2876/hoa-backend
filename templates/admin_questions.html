@@ -138,7 +138,7 @@
         </td>
         <td class="q-cites">
           {% if r.cited_clause_ids %}
-            {{ r.cited_clause_ids | join(', ') }}
+            {% for cid in r.cited_clause_ids %}<a href="{{ url_for('clause_detail', key=cid) }}">{{ cid }}</a>{{ ", " if not loop.last }}{% endfor %}
           {% else %}
             <span class="muted">—</span>
           {% endif %}

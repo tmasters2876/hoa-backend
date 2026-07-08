@@ -1,0 +1,215 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">{{ clause.clause_id or clause.id }}</span>
+  <span class="topbar-sub">{{ clause.citation or 'no citation' }}</span>
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .cd-meta { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+  .cd-text {
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .cd-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .cd-table th, .cd-table td {
+    text-align:left; vertical-align:top;
+    border-bottom:1px solid var(--border); padding:8px 12px;
+  }
+  .cd-table th {
+    font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.05em; color:var(--muted); white-space:nowrap;
+    background:var(--surface-2);
+  }
+  .cd-table td.mono { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); white-space:nowrap; }
+  .cd-val { font-family:ui-monospace,monospace; font-size:12px; word-break:break-word; max-width:240px; }
+  .diff-row { margin-bottom: 6px; }
+  .diff-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); }
+  .diff-old { color: var(--danger); text-decoration: line-through; font-size: 12px; }
+  .diff-new { color: var(--accent); font-size: 12px; }
+  .diff-val { max-height: 140px; overflow-y: auto; word-break: break-word; }
+</style>
+
+<div class="stack">
+
+  {# ── Clause card ── #}
+  <div class="panel">
+    <div class="cd-meta">
+      <span class="clause-id-badge">{{ clause.clause_id or clause.id }}</span>
+      {% if clause.status == 'approved' %}
+        <span class="pill ok">approved</span>
+      {% elif clause.status == 'pending' %}
+        <span class="pill stale">pending — not visible to residents</span>
+      {% else %}
+        <span class="pill stale">{{ clause.status }}</span>
+      {% endif %}
+      {% if clause.embedding_stale %}<span class="pill stale">stale embedding</span>{% endif %}
+      <span class="pill">precedence {{ clause.precedence_level }}</span>
+    </div>
+    <p style="font-size:13px;margin:4px 0;">
+      <strong>{{ clause.citation or 'no citation' }}</strong> — {{ clause.document or 'unknown document' }}{% if clause.page %}, page {{ clause.page }}{% endif %}
+      {% if clause.link %} · <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}
+    </p>
+    {% if clause.tags_csv %}<p class="muted" style="font-size:12px;">Tags: {{ clause.tags_csv }}</p>{% endif %}
+    {% if clause.plain_summary %}
+      <h3 style="margin-top:12px;">Summary</h3>
+      <p style="font-size:13px;">{{ clause.plain_summary }}</p>
+    {% endif %}
+    {% if clause.clause_text %}
+      <h3 style="margin-top:12px;">Full Text</h3>
+      <div class="cd-text">{{ clause.clause_text }}</div>
+    {% endif %}
+  </div>
+
+  {# ── Edit ── #}
+  <details class="panel collapsible-panel">
+    <summary>Edit This Clause</summary>
+    <form method="post" action="{{ url_for('update_clause', clause_id=clause.id) }}" class="stack" style="margin-top:12px;">
+      <input type="hidden" name="next" value="{{ url_for('clause_detail', key=clause.clause_id or clause.id) }}">
+      <div class="button-row">
+        <div>
+          <label>Clause ID</label>
+          <input name="clause_id" value="{{ clause.clause_id or '' }}">
+        </div>
+        <div>
+          <label>Document</label>
+          <input name="document" value="{{ clause.document or '' }}">
+        </div>
+        <div>
+          <label>Page<span class="req">*</span></label>
+          <input name="page" type="number" min="1" value="{{ clause.page or '' }}" required>
+        </div>
+        <div>
+          <label>Precedence</label>
+          <input name="precedence_level" type="number" min="0" value="{{ clause.precedence_level or '' }}">
+        </div>
+      </div>
+      <div>
+        <label>Citation<span class="req">*</span></label>
+        <input name="citation" value="{{ clause.citation or '' }}" required>
+      </div>
+      <div>
+        <label>Link<span class="req">*</span></label>
+        <input name="link" value="{{ clause.link or '' }}" placeholder="https://drive.google.com/file/d/…" required>
+        <div class="field-help">Must be a Google Drive link</div>
+      </div>
+      <div>
+        <label>Tags</label>
+        <input name="tags" value="{{ clause.tags_csv }}">
+      </div>
+      <div>
+        <label>Plain Summary</label>
+        <textarea name="plain_summary">{{ clause.plain_summary or '' }}</textarea>
+      </div>
+      <div>
+        <label>Clause Text</label>
+        <textarea name="clause_text">{{ clause.clause_text or '' }}</textarea>
+      </div>
+      <div class="button-row" style="align-items:center;">
+        <button type="submit" name="self_approve" value="" class="ghost green" style="flex:0 0 auto;">Submit for Approval</button>
+        {% if is_superuser %}
+        <button type="submit" name="self_approve" value="1" class="ghost amber" style="flex:0 0 auto;">⚠ Self-approve</button>
+        {% endif %}
+      </div>
+    </form>
+  </details>
+
+  {# ── Pending changes ── #}
+  <div class="panel">
+    <h2>Pending &amp; Decided Changes</h2>
+    {% if pending %}
+    <table class="cd-table">
+      <thead><tr><th>Submitted</th><th>Action</th><th>By</th><th>Status</th><th>Changes</th></tr></thead>
+      <tbody>
+        {% for p in pending %}
+        <tr>
+          <td class="mono">{{ (p.submitted_at or '')[:16].replace('T',' ') }}</td>
+          <td>{{ p.action }}</td>
+          <td>{{ p.submitted_by }}</td>
+          <td>
+            {% if p.status == 'pending' %}<span class="pill stale">pending</span>
+            {% elif p.status == 'approved' %}<span class="pill ok">approved</span>
+            {% else %}<span class="pill stale">{{ p.status }}</span>{% endif %}
+            {% if p.reviewed_by %}<div class="muted" style="font-size:11px;">by {{ p.reviewed_by }}</div>{% endif %}
+            {% if p.review_notes %}<div style="font-size:11px; max-width:180px; word-break:break-word;"><span class="muted">Reason:</span> {{ p.review_notes }}</div>{% endif %}
+          </td>
+          <td>
+            {% for d in p.field_diffs %}
+            <div class="diff-row">
+              <div class="diff-label">{{ d.field }}</div>
+              {% if d.old is not none %}<div class="diff-old diff-val">{{ d.old }}</div>{% endif %}
+              <div class="diff-new diff-val">{{ d.new if d.new is not none else "—" }}</div>
+            </div>
+            {% else %}
+            <span class="muted">{{ 'deletion' if p.action == 'delete' else 'no field changes' }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">No pending or decided changes reference this clause.</p>{% endif %}
+  </div>
+
+  {# ── Flags ── #}
+  <div class="panel">
+    <h2>Revision Flags</h2>
+    {% if flags %}
+    <table class="cd-table">
+      <thead><tr><th>Created</th><th>Type</th><th>Status</th><th>Reason</th><th></th></tr></thead>
+      <tbody>
+        {% for f in flags %}
+        <tr>
+          <td class="mono">{{ (f.created_at or '')[:16].replace('T',' ') }}</td>
+          <td>{{ f.flag_type }}</td>
+          <td>
+            {% if f.status == 'open' %}<span class="pill stale">open</span>
+            {% elif f.status == 'in_review' %}<span class="pill stale">in review</span>
+            {% else %}<span class="pill ok">{{ f.status.replace('_',' ') }}</span>{% endif %}
+          </td>
+          <td style="font-size:12px;max-width:300px;word-break:break-word;">{{ f.reason or f.question or '—' }}</td>
+          <td><a href="{{ url_for('admin_flag_detail', flag_id=f.id) }}" style="font-size:12px;">open flag →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">No flags reference this clause.</p>{% endif %}
+  </div>
+
+  {# ── History ── #}
+  <div class="panel">
+    <h2>Change History</h2>
+    <p class="muted" style="font-size:12px;">Most recent 50 audit entries for this clause.</p>
+    {% if history %}
+    <table class="cd-table">
+      <thead><tr><th>When (UTC)</th><th>Action</th><th>By</th><th>Field</th><th>Old</th><th>New</th></tr></thead>
+      <tbody>
+        {% for h in history %}
+        <tr>
+          <td class="mono">{{ (h.changed_at or '')[:16].replace('T',' ') }}</td>
+          <td>{{ h.action }}</td>
+          <td>{{ h.changed_by or '—' }}</td>
+          <td class="mono">{{ h.field_changed or '—' }}</td>
+          <td class="cd-val">{{ (h.old_value or '—')[:120] }}</td>
+          <td class="cd-val">{{ (h.new_value or '—')[:120] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">No audit history recorded for this clause.</p>{% endif %}
+  </div>
+
+</div>
+{% endblock %}

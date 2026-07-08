@@ -1,0 +1,76 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Tag Management</span>
+  <span class="topbar-sub">{{ tags | length }} distinct tag{{ 's' if tags | length != 1 else '' }}</span>
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .tag-table { width:100%; max-width:760px; border-collapse:collapse; font-size:13px; }
+  .tag-table th, .tag-table td {
+    text-align:left; vertical-align:middle;
+    border-bottom:1px solid var(--border); padding:8px 12px;
+  }
+  .tag-table th {
+    font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.05em; color:var(--muted); white-space:nowrap;
+    background:var(--surface-2);
+  }
+  .tag-name { font-family:ui-monospace,monospace; font-size:12.5px; }
+  .tag-mixed { color:#7a5200; }
+  .tag-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .tag-actions input { font-size:12px; padding:5px 8px; width:130px; text-transform:uppercase; }
+  .tag-actions button { font-size:12px; padding:5px 12px; }
+</style>
+
+<div class="panel">
+  <p class="muted" style="margin-bottom:6px;">
+    Rename applies across <strong>all clauses immediately</strong> — no two-person approval — and is audit-logged per clause.
+    Renaming into an existing tag merges them. New names are always UPPERCASE (corpus convention).
+    Changes reach residents within the cache TTL (~1 hour). Tag changes never require embedding regeneration.
+  </p>
+  {% if mixed_case_count > 0 %}
+  <p style="font-size:13px;"><span class="pill stale">{{ mixed_case_count }} mixed-case tag{{ 's' if mixed_case_count != 1 }}</span>
+    highlighted below — rename each to its UPPERCASE form to finish the tag audit.</p>
+  {% endif %}
+
+  <table class="tag-table">
+    <thead>
+      <tr><th>Tag</th><th>Clauses</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for tag, count in tags %}
+      <tr>
+        <td class="tag-name {% if tag != tag.upper() %}tag-mixed{% endif %}">
+          {{ tag }}
+          {% if tag != tag.upper() %}<span class="pill stale" style="font-size:10px; margin-left:6px;">mixed case</span>{% endif %}
+        </td>
+        <td><a href="{{ url_for('admin_home', tag=tag) }}" title="Browse clauses with this tag">{{ count }}</a></td>
+        <td>
+          <div class="tag-actions">
+            <form method="post" action="{{ url_for('rename_tag') }}" style="display:flex; gap:6px; align-items:center;"
+                  onsubmit="return confirm('Rename \'{{ tag }}\' to \'' + this.new_tag.value.toUpperCase() + '\' across all {{ count }} clause(s)?\n\nApplies immediately, no approval step.');">
+              <input type="hidden" name="old_tag" value="{{ tag }}">
+              <input name="new_tag" placeholder="{{ tag.upper() }}" {% if tag != tag.upper() %}value="{{ tag.upper() }}"{% endif %} required>
+              <button class="secondary" type="submit">Rename</button>
+            </form>
+            <form method="post" action="{{ url_for('delete_tag') }}"
+                  onsubmit="return confirm('Remove tag \'{{ tag }}\' from all {{ count }} clause(s)?\n\nApplies immediately, no approval step. This cannot be undone from this page.');">
+              <input type="hidden" name="old_tag" value="{{ tag }}">
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No tags found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -153,7 +153,7 @@
             <td>
               <span class="action-pill {{ e.action | replace(' ', '_') }}">{{ e.action }}</span>
             </td>
-            <td class="mono">{{ e.clause_id or "—" }}</td>
+            <td class="mono">{% if e.clause_id %}<a href="{{ url_for('clause_detail', key=e.clause_id) }}">{{ e.clause_id }}</a>{% else %}—{% endif %}</td>
             <td class="mono">{{ e.field_changed or "—" }}</td>
             <td class="val">{{ e.old_value_display or "—" }}</td>
             <td class="val">{{ e.new_value_display or "—" }}</td>
