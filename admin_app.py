@@ -13,7 +13,7 @@ import pdfplumber
 import requests as http_requests
 from rapidfuzz import fuzz
 
-from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, g, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from services import (
@@ -85,26 +85,45 @@ def _clear_login_attempts(key: str):
         _login_attempts.pop(key, None)
 
 
-SUPERUSERS = {'tmasters', 'cmasters', 'admin'}
+# ── Roles ─────────────────────────────────────────────────────────────────────
+# Three hierarchical tiers; each includes everything below it. Source of truth
+# is the admin_users.role column (sql/002_roles.sql). LEGACY_SUPERUSERS exists
+# only as a last-resort fallback when the DB is unreachable mid-session.
+
+ROLE_RANK = {"member": 0, "board": 1, "superuser": 2}
+LEGACY_SUPERUSERS = {'tmasters', 'cmasters', 'admin'}
 
 
-def _is_approver(username: str) -> bool:
-    """Return True if the user has is_approver=True in admin_users."""
-    if not username:
-        return False
-    try:
-        result = (
-            supabase()
-            .from_("admin_users")
-            .select("is_approver")
-            .eq("username", username)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        return bool(rows[0].get("is_approver")) if rows else False
-    except Exception:
-        return False
+def _role_rank(role) -> int:
+    return ROLE_RANK.get((role or "member").strip().lower(), 0)
+
+
+def _current_role() -> str:
+    return getattr(g, "role", None) or "member"
+
+
+def _is_superuser_request() -> bool:
+    return _role_rank(_current_role()) >= ROLE_RANK["superuser"]
+
+
+def _load_current_user():
+    """Fetch the session user's row fresh from admin_users — the seam that
+    makes deactivation/demotion take effect on the next request instead of
+    at next login. Returns the row, or None if the user no longer exists.
+    Raises on Supabase errors (login_required decides the fallback)."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    result = (
+        supabase()
+        .from_("admin_users")
+        .select("id,username,is_active,role,must_change_password")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -113,7 +132,7 @@ def lookup_and_verify_user(username: str, password: str) -> dict | None:
     result = (
         supabase()
         .from_("admin_users")
-        .select("id,username,password_hash,is_active,must_change_password,is_approver")
+        .select("id,username,password_hash,is_active,must_change_password,role")
         .eq("username", username.lower())
         .limit(1)
         .execute()
@@ -155,20 +174,47 @@ def login_required(f):
             if request.path not in allowed:
                 flash("Please set your password before continuing.", "error")
                 return redirect(url_for("force_change_password"))
+        # Per-request account check: deactivation, deletion, and role changes
+        # take effect on the user's NEXT request, not at next login.
+        try:
+            row = _load_current_user()
+            if row is None or not row.get("is_active"):
+                log_user_activity(session.get("username"), "session_revoked")
+                session.clear()
+                flash("Your account is no longer active. Please contact an administrator.", "error")
+                return redirect(url_for("login"))
+            g.role = (row.get("role") or "member").strip().lower()
+            session["role"] = g.role  # keep the fallback snapshot fresh
+        except Exception as e:
+            # Transient Supabase failure: fall back to the at-login snapshot
+            # rather than locking every admin out while the DB hiccups.
+            print(f"[auth] WARNING: per-request user check failed, using session snapshot: {e}")
+            g.role = session.get("role") or (
+                "superuser" if session.get("username") in LEGACY_SUPERUSERS else "member"
+            )
         return f(*args, **kwargs)
     return wrapper
+
+
+def role_required(min_role: str):
+    """Gate a route to `min_role` and above (member < board < superuser).
+    Includes login_required, which sets g.role fresh each request."""
+    min_rank = _role_rank(min_role)
+
+    def decorator(f):
+        @functools.wraps(f)
+        def check(*args, **kwargs):
+            if _role_rank(_current_role()) < min_rank:
+                flash("You do not have permission to access that page.", "error")
+                return redirect(url_for("admin_home"))
+            return f(*args, **kwargs)
+        return login_required(check)
+    return decorator
 
 
 def superuser_required(f):
-    @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        if not session.get("logged_in"):
-            return redirect(url_for("login"))
-        if session.get("username") not in SUPERUSERS:
-            flash("You do not have permission to manage users.", "error")
-            return redirect(url_for("admin_home"))
-        return f(*args, **kwargs)
-    return wrapper
+    """Kept as an alias so existing routes don't churn."""
+    return role_required("superuser")(f)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -355,12 +401,12 @@ def inject_superuser():
             open_flags_count = r2.count or 0
         except Exception:
             pass
-    username = session.get("username")
-    is_sup = username in SUPERUSERS
-    is_app = (not is_sup) and bool(_is_approver(username)) if username else False
+    role = _current_role() if session.get("logged_in") else None
+    rank = _role_rank(role) if role else -1
     return {
-        "is_superuser": is_sup,
-        "is_approver": is_app,
+        "is_superuser": rank >= ROLE_RANK["superuser"],
+        "is_approver": rank == ROLE_RANK["board"],  # board only, matching old semantics
+        "role": role,
         "pending_count": pending_count,
         "open_flags_count": open_flags_count,
     }
@@ -546,6 +592,7 @@ def login_post():
         session["logged_in"] = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
+        session["role"] = (user.get("role") or "member").strip().lower()
         session["logged_in_at"] = datetime.now(timezone.utc).isoformat()
         log_user_activity(user["username"], "login_success")
         if user.get("must_change_password"):
@@ -718,7 +765,7 @@ def create_clause():
             flash(msg, "error")
         return redirect(url_for("admin_home"))
 
-    self_approve = bool(request.form.get("self_approve")) and session.get("username") in SUPERUSERS
+    self_approve = bool(request.form.get("self_approve")) and _is_superuser_request()
 
     payload = {
         "clause_id": request.form.get("clause_id", "").strip() or None,
@@ -775,7 +822,7 @@ def update_clause(clause_id: str):
         flash(f"Clause {clause_id} was not found.", "error")
         return redirect(url_for("admin_home"))
 
-    self_approve = bool(request.form.get("self_approve")) and session.get("username") in SUPERUSERS
+    self_approve = bool(request.form.get("self_approve")) and _is_superuser_request()
 
     new_clause_text = request.form.get("clause_text", "").strip()
     new_plain_summary = request.form.get("plain_summary", "").strip()
@@ -835,7 +882,7 @@ def update_clause_json(clause_id: str):
     if not existing:
         return jsonify({"ok": False, "message": f"Clause {clause_id} not found."}), 404
 
-    self_approve = bool(request.form.get("self_approve")) and session.get("username") in SUPERUSERS
+    self_approve = bool(request.form.get("self_approve")) and _is_superuser_request()
 
     new_clause_text = request.form.get("clause_text", "").strip()
     new_plain_summary = request.form.get("plain_summary", "").strip()
@@ -1208,7 +1255,7 @@ def bulk_delete_clauses():
 @app.get("/admin/users")
 @login_required
 def admin_users():
-    is_superuser = session.get("username") in SUPERUSERS
+    is_superuser = _is_superuser_request()
 
     users = []
     last_logins = {}
@@ -1216,7 +1263,7 @@ def admin_users():
         result = (
             supabase()
             .from_("admin_users")
-            .select("id,username,is_active,created_at,must_change_password,is_approver")
+            .select("id,username,is_active,created_at,must_change_password,role")
             .order("created_at")
             .execute()
         )
@@ -1264,7 +1311,7 @@ def admin_users():
             print(f"[activity] WARNING: failed to fetch activity log: {e}")
 
     for user in users:
-        user["is_superuser"] = user["username"] in SUPERUSERS
+        user["role"] = (user.get("role") or "member").strip().lower()
 
     return render_template(
         "admin_users.html",
@@ -1288,11 +1335,16 @@ def create_user():
         return redirect(url_for("admin_users"))
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
     try:
+        role = (request.form.get("role") or "member").strip().lower()
+        if role not in ROLE_RANK:
+            role = "member"
         supabase().from_("admin_users").insert({
             "username": username,
             "password_hash": password_hash,
             "must_change_password": True,
-            "is_approver": bool(request.form.get("is_approver")),
+            "role": role,
+            # legacy mirror kept in sync as a rollback aid (see sql/002_roles.sql)
+            "is_approver": role == "board",
         }).execute()
         log_audit_event(action="user_added", new_value=username)
         flash(f"User '{username}' created.", "success")
@@ -1359,13 +1411,20 @@ def delete_user(user_id: str):
     return redirect(url_for("admin_users"))
 
 
-@app.post("/admin/users/<user_id>/toggle-approver")
+@app.post("/admin/users/<user_id>/set-role")
 @superuser_required
-def toggle_approver(user_id: str):
+def set_role(user_id: str):
+    new_role = (request.form.get("role") or "").strip().lower()
+    if new_role not in ROLE_RANK:
+        flash("Invalid role.", "error")
+        return redirect(url_for("admin_users"))
+    if user_id == session.get("user_id"):
+        flash("You cannot change your own role.", "error")
+        return redirect(url_for("admin_users"))
     result = (
         supabase()
         .from_("admin_users")
-        .select("username,is_approver")
+        .select("username,role")
         .eq("id", user_id)
         .limit(1)
         .execute()
@@ -1375,14 +1434,29 @@ def toggle_approver(user_id: str):
         flash("User not found.", "error")
         return redirect(url_for("admin_users"))
     user = rows[0]
-    if user["username"] in SUPERUSERS:
-        flash("Cannot change approver status for superusers.", "error")
+    old_role = (user.get("role") or "member").strip().lower()
+    if old_role == new_role:
+        flash(f"'{user['username']}' is already {new_role}.", "success")
         return redirect(url_for("admin_users"))
-    new_status = not bool(user.get("is_approver"))
-    supabase().from_("admin_users").update({"is_approver": new_status}).eq("id", user_id).execute()
-    verb = "granted" if new_status else "revoked"
-    log_audit_event(action="approver_role_updated", new_value=f"{user['username']} {verb}")
-    flash(f"Approver role {verb} for '{user['username']}'.", "success")
+    if old_role == "superuser":
+        remaining = (
+            supabase()
+            .from_("admin_users")
+            .select("id")
+            .eq("role", "superuser")
+            .eq("is_active", True)
+            .execute()
+        ).data or []
+        if len(remaining) <= 1:
+            flash("Cannot demote the last superuser.", "error")
+            return redirect(url_for("admin_users"))
+    supabase().from_("admin_users").update({
+        "role": new_role,
+        # legacy mirror kept in sync as a rollback aid (see sql/002_roles.sql)
+        "is_approver": new_role == "board",
+    }).eq("id", user_id).execute()
+    log_audit_event(action="role_updated", new_value=f"{user['username']}: {old_role} → {new_role}")
+    flash(f"Role for '{user['username']}' changed to {new_role}. Takes effect on their next request.", "success")
     return redirect(url_for("admin_users"))
 
 
@@ -1896,7 +1970,7 @@ def update_flag_status(flag_id: str):
 
     closing_statuses = {"closed_no_change", "closed_changed", "closed_deferred"}
     username = session.get("username")
-    can_close = username in SUPERUSERS or _is_approver(username)
+    can_close = _role_rank(_current_role()) >= ROLE_RANK["board"]
     if new_status in closing_statuses and not can_close:
         flash("You do not have permission to close flags.", "error")
         return redirect(url_for("admin_flag_detail", flag_id=flag_id))

@@ -3,6 +3,8 @@ Tests for submit_pending_change, _apply_pending_change, and the
 /admin/pending/<change_id>/approve route in admin_app.py.
 """
 import os
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -55,16 +57,28 @@ def mock_supabase():
 def mock_session():
     """Patch admin_app.session with a MagicMock pre-configured as a logged-in
     superuser (tmasters).  Tests that need a different user can override
-    m.get.side_effect inside the test."""
+    m.get.side_effect inside the test.  Also patches _load_current_user so
+    login_required's per-request account check (Roles Rebuild) passes."""
+    # logged_in_at must be fresh: superuser routes now run the full
+    # login_required checks (incl. 8h expiry) via role_required.
     session_data = {
         "logged_in": True,
         "username": "tmasters",
         "user_id": "user-123",
-        "logged_in_at": "2026-04-01T10:00:00+00:00",
+        "role": "superuser",
+        "logged_in_at": datetime.now(timezone.utc).isoformat(),
     }
     m = MagicMock()
     m.get.side_effect = lambda k, default=None: session_data.get(k, default)
-    with patch("admin_app.session", m):
+    user_row = {
+        "id": "user-123",
+        "username": "tmasters",
+        "is_active": True,
+        "role": "superuser",
+        "must_change_password": False,
+    }
+    with patch("admin_app.session", m), \
+         patch("admin_app._load_current_user", return_value=user_row):
         yield m
 
 

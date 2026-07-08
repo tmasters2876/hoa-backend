@@ -53,11 +53,13 @@
           <input id="new_password" name="password" type="password" autocomplete="new-password" required>
         </div>
         <div>
-          <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
-            <input type="checkbox" name="is_approver" value="1">
-            Approver role
-          </label>
-          <div class="field-help">For board or committee members managing the CCR revision process. Cannot approve clause edits or manage users.</div>
+          <label for="new_role">Role</label>
+          <select id="new_role" name="role">
+            <option value="member" selected>Member — browse clauses, submit changes</option>
+            <option value="board">Board — flags, resident questions, analytics</option>
+            <option value="superuser">Superuser — full access incl. user management</option>
+          </select>
+          <div class="field-help">Each role includes everything below it. Role changes take effect on the user's next request.</div>
         </div>
         <button type="submit">Add User</button>
       </form>
@@ -120,8 +122,10 @@
                 {% if user.must_change_password %}
                   <span class="pill stale" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;" title="Has not logged in yet — temp password still active">Temp Password</span>
                 {% endif %}
-                {% if user.is_approver %}
-                  <span class="pill ok" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;">Approver</span>
+                {% if user.role == 'superuser' %}
+                  <span class="pill ok" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;">Superuser</span>
+                {% elif user.role == 'board' %}
+                  <span class="pill ok" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;">Board</span>
                 {% endif %}
               </td>
               <td>
@@ -141,13 +145,14 @@
                         {{ 'Deactivate' if user.is_active else 'Activate' }}
                       </button>
                     </form>
-                    {% if not user.is_superuser %}
-                    <form method="post" action="{{ url_for('toggle_approver', user_id=user.id) }}">
-                      <button class="secondary" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">
-                        {{ 'Revoke Approver' if user.is_approver else 'Grant Approver' }}
-                      </button>
+                    <form method="post" action="{{ url_for('set_role', user_id=user.id) }}" style="display:flex; gap:4px; align-items:center;">
+                      <select name="role" style="font-size: 0.82rem; padding: 4px 6px;">
+                        <option value="member" {{ 'selected' if user.role == 'member' }}>Member</option>
+                        <option value="board" {{ 'selected' if user.role == 'board' }}>Board</option>
+                        <option value="superuser" {{ 'selected' if user.role == 'superuser' }}>Superuser</option>
+                      </select>
+                      <button class="secondary" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">Set Role</button>
                     </form>
-                    {% endif %}
                     <form method="post" action="{{ url_for('delete_user', user_id=user.id) }}"
                           onsubmit="return confirm('Delete user \'{{ user.username }}\'?\n\nThis cannot be undone.');">
                       <button class="danger" type="submit" style="font-size: 0.82rem; padding: 6px 14px;">Delete</button>
