@@ -50,9 +50,13 @@
     <div class="help-section">
       <h3>Browse &amp; Filters</h3>
       <p>Filter clauses by keyword (searches clause_id, citation, document, plain summary, and full clause text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
-      <p>Only clauses with <code>status = approved</code> are visible to residents via the Carrd chatbot. All statuses are visible here in the admin console.</p>
+      <p>Only clauses with <code>status = approved</code> are visible to residents via the Carrd chatbot. All statuses are visible here in the admin console. Approved changes reach residents automatically within the corpus cache window (~1 hour) — no redeploy needed.</p>
       <p>Clause cards show a <strong>⏳ Pending Approval</strong> badge when a change is queued but not yet approved. The live clause text remains unchanged until the pending change is approved.</p>
-      <p>Cards with an orange left border have a <strong>stale embedding</strong> — the clause text has changed since the embedding was last generated. Stale clauses are excluded from semantic (vector) search until regenerated.</p>
+      <p>Cards with an orange left border have a <strong>stale embedding</strong> — the clause text has changed since the embedding was last generated (see Embeddings below for what that does and doesn't affect).</p>
+    </div>
+    <div class="help-section">
+      <h3>Clause Pages</h3>
+      <p>Every clause has its own page at <code>/admin/clauses/&lt;CLAUSE_ID&gt;</code> — click any clause ID badge or link anywhere in the console (browse cards, audit log, pending changes, flags, resident questions) to open it. The page shows the full clause, an edit form, its pending and decided changes with field diffs, any revision flags, and its change history — everything about one clause in one place.</p>
     </div>
     <div class="help-section">
       <h3>Approval Workflow</h3>
@@ -61,7 +65,9 @@
         <li><strong>Submit for Approval</strong> — queues the change in Pending. The live clause is unchanged until approved.</li>
         <li><strong>⚠ Self-approve</strong> (superusers only) — applies the change immediately, bypassing the two-person rule. Use only when no other admin is available. A warning is recorded in the audit log.</li>
         <li>Deletions always require a second superuser to approve — self-approve is disabled for deletes.</li>
-        <li>The <strong>Pending</strong> nav item shows an orange badge when items are waiting.</li>
+        <li>The <strong>Pending</strong> nav item shows an orange badge when items are waiting. The page shows a field-by-field old → new diff for each change.</li>
+        <li>The Pending page's <strong>History tab</strong> (visible to board and up) lists every decided change with who approved or rejected it, when, and the rejection reason — the permanent governance record.</li>
+        <li><strong>My Submissions</strong> (in the sidebar, all users) shows your own submitted changes, their status, and the reviewer's rejection reason if declined.</li>
       </ul>
     </div>
     <div class="help-section">
@@ -80,7 +86,7 @@
       <h3>Add Clause</h3>
       <p>Manually add a single clause. Citation, page, and a Google Drive source link are required. At least one of <code>clause_text</code> or <code>plain_summary</code> must be provided.</p>
       <p>The embedding is <em>not</em> generated automatically on add — use <strong>Regenerate Embedding</strong> on the approved clause afterward so it appears in semantic search results.</p>
-      <p><strong>Precedence Level</strong> controls result ranking when multiple clauses match a query. Higher values rank higher. Use 0 (default) for standard clauses; reserve higher values for overriding or primary governing documents.</p>
+      <p><strong>Precedence Level</strong> encodes document authority: <em>lower numbers = higher authority</em> (1 = Texas Property Code, 2 = CC&amp;Rs, … 9 = Builders Guidelines). The resident bot sorts clauses by precedence when building answers, and ties in relevance scoring break toward the more authoritative clause. Match the document family's standard level — don't invent new values.</p>
     </div>
     {% if is_superuser %}
     <div class="help-section">
@@ -104,13 +110,24 @@
     {% endif %}
     <div class="help-section">
       <h3>Embeddings</h3>
-      <p>Each clause stores an embedding — a numeric vector used for semantic (meaning-based) search by the HOA chatbot. Keyword search is unaffected by embedding status.</p>
+      <p>Each clause stores an embedding — a numeric vector used only by the <em>legacy admin vector search</em> (e.g. finding near-duplicate clauses in the Search Test's collapsed section). <strong>The resident chatbot does not use embeddings</strong> — it uses keyword/tag relevance scoring over the full corpus — so embedding status never affects resident answers.</p>
       <ul>
-        <li>Editing <code>clause_text</code> or <code>plain_summary</code> marks the embedding stale when the edit is approved and applied.</li>
-        <li>Stale clauses are excluded from vector search results until regenerated.</li>
+        <li>Editing <code>clause_text</code> marks the embedding stale when the edit is approved and applied. Tag-only or summary-only edits don't require regeneration.</li>
+        <li>Stale clauses are excluded from the legacy vector search until regenerated.</li>
         <li>Use <strong>Regenerate Embedding</strong> on any clause to call OpenAI and refresh it. No approval required — takes effect immediately.</li>
         <li>Model in use: <code>{{ embedding_model }}</code></li>
       </ul>
+    </div>
+    {% if is_superuser %}
+    <div class="help-section">
+      <h3>Tag Management</h3>
+      <p><strong>Superusers only</strong>, via <strong>Tags</strong> in the sidebar. Lists every distinct tag with its clause count. Renames apply across <em>all</em> clauses immediately (no two-person approval) and are audit-logged per clause; renaming into an existing tag merges them; Delete removes a tag everywhere. New names are always UPPERCASE — the corpus convention. Mixed-case tags are badged for cleanup.</p>
+      <p>Tags matter: the resident bot's relevance scoring weights tag matches 3× over incidental text matches, so clean tags directly improve answers. Tag changes reach residents within the corpus cache window (~1 hour) and never require embedding regeneration.</p>
+    </div>
+    {% endif %}
+    <div class="help-section">
+      <h3>Export CSV</h3>
+      <p>The <strong>Export CSV</strong> panel downloads the clause database honoring your current browse filters (keyword, tag, document, stale). Columns match the import template plus <code>id</code> and <code>status</code>, so export → edit → re-import round-trips. Use it for backups and offline committee review packets. Embeddings are excluded.</p>
     </div>
     <div class="help-section">
       <h3>Search Test</h3>
@@ -120,20 +137,33 @@
     </div>
     <div class="help-section">
       <h3>Admin Search</h3>
-      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query using the same vector + keyword logic as the resident-facing Carrd chatbot — but with flagging capability built in.</p>
+      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query through the <em>same pipeline as the resident-facing Carrd chatbot</em> (relevance prefilter → full-corpus GPT prompt → cited answer) — but with flagging capability built in. This calls GPT, so it costs tokens; for a free corpus-selection preview use the Search Test panel instead. Admin searches are <em>not</em> logged to the resident question log.</p>
       <ul>
         <li>The GPT answer is displayed at the top, followed by the cited clause cards that informed it.</li>
         <li>Each cited clause card has a <strong>Flag for Revision</strong> button to flag that specific clause.</li>
         <li><strong>Flag this topic</strong> at the top of results captures the entire question, GPT answer, and all cited clause IDs as a single topic-level flag — useful when the concern is about a policy area rather than one specific clause.</li>
       </ul>
     </div>
+    {% if is_superuser or is_approver %}
+    <div class="help-section">
+      <h3>Resident Questions</h3>
+      <p><strong>Board and up</strong>, via <strong>Resident Questions</strong> in the sidebar. Every question residents ask the Carrd chatbot is logged automatically — question, answer, cited clauses (linked to their clause pages), and prefilter telemetry. Admin-console searches are deliberately excluded.</p>
+      <ul>
+        <li><strong>FALLBACK</strong> rows are the gold: the relevance prefilter found too little signal, meaning the governing documents probably don't cover that topic clearly. Filter to "Fallback only" to build the committee's gap list.</li>
+        <li>"No citations" filters to answers GPT couldn't ground in any clause.</li>
+        <li>Whimsy questions ("who made you?") are logged but hidden by default — toggle "Include whimsy" to see them.</li>
+        <li>Privacy: no IP or identity is stored; retention is 24 months.</li>
+      </ul>
+    </div>
+    {% endif %}
     <div class="help-section">
       <h3>Revision Flags</h3>
       <p>Available via <strong>Revision Flags</strong> in the sidebar. A deliberation tool for the CCR revision committee — flags do not change any clause data. The existing edit and approval workflow is downstream of this process.</p>
       <ul>
         <li><strong>Clause flag</strong> — marks a specific clause for revision discussion. Triggered from the clause browse list, the Search Test results, or the Admin Search cited clause cards. The 🏳 Flag button on a clause card turns to 🚩 Flagged once an open flag exists.</li>
         <li><strong>Topic flag</strong> — captures a full Q&amp;A result (question, GPT answer, and cited clause IDs) when the concern spans multiple clauses or a broader policy area.</li>
-        <li>Any logged-in user can create flags and add comments. Only superusers can close a flag.</li>
+        <li>Any logged-in user can create flags and add comments. Closing a flag requires the <strong>board</strong> role or higher.</li>
+        <li>Cited clause IDs on a flag link straight to their clause pages, and each clause page lists the flags that reference it.</li>
         <li>Statuses: <strong>Open</strong> → <strong>In Review</strong> → closed as <strong>No Change</strong>, <strong>Changed</strong>, or <strong>Deferred</strong>.</li>
         <li>The flag detail page shows the full clause or topic snapshot, original flag notes, a threaded comment history, and status management. Comments are permanent — they cannot be edited or deleted.</li>
         <li>The <strong>Revision Flags</strong> nav item shows an orange badge when open flags exist.</li>
@@ -141,15 +171,19 @@
     </div>
     <div class="help-section">
       <h3>Audit Log</h3>
-      <p>Every action is recorded — clause adds, edits, deletes, approvals, rejections, embedding regenerations, user changes, password resets, and CSV imports. Accessible via <strong>Audit Log</strong> in the sidebar (superusers only). Filter by user, action type, or date range. All timestamps are displayed in UTC.</p>
+      <p>Every action is recorded — clause adds, edits, deletes, approvals, rejections, embedding regenerations, tag renames/deletes, role changes, user changes, password resets, and CSV imports. Accessible via <strong>Audit Log</strong> in the sidebar (superusers only). Filter by user, action type, or date range. Clause IDs link to their clause pages. All timestamps are displayed in UTC.</p>
     </div>
     <div class="help-section">
-      <h3>User Management</h3>
-      <p>Accessible via the <strong>Users</strong> link in the sidebar.</p>
+      <h3>Roles &amp; User Management</h3>
+      <p>Accessible via the <strong>Users</strong> link in the sidebar. Three hierarchical roles — each includes everything below it:</p>
       <ul>
-        <li><strong>Superusers</strong> — can add, deactivate, delete, and reset passwords for other users. Superuser status cannot be granted or removed from the UI.</li>
-        <li><strong>Approvers</strong> — a board-level or committee-level role granted by superusers. Approvers can close and reopen revision flags but cannot approve clause edits, manage users, or run CSV imports. Grant or revoke this role from the Users page via <strong>Grant Approver</strong> / <strong>Revoke Approver</strong>.</li>
-        <li><strong>All users</strong> — can change their own password from the Users page via <strong>Change Password</strong>.</li>
+        <li><strong>Superuser</strong> — everything: user and role management, approvals, audit log, tag management, CSV imports.</li>
+        <li><strong>Board</strong> — the tight-knit committee tier: close revision flags, view Resident Questions, and see the Pending History tab. Cannot approve clause edits or manage users.</li>
+        <li><strong>Member</strong> — browse clauses, submit changes for approval, track them under My Submissions, create flags and comments, change own password.</li>
+      </ul>
+      <ul>
+        <li>Superusers set roles from the Users page via the role dropdown. You cannot change your own role, and the last superuser cannot be demoted.</li>
+        <li>Role changes and deactivations take effect on the user's <em>next request</em> — not at their next login.</li>
         <li>You cannot deactivate or delete your own account from the admin UI.</li>
         <li>Login sessions expire after 8 hours. Login and logout events are recorded in the activity log.</li>
       </ul>

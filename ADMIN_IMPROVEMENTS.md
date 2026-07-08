@@ -6,7 +6,19 @@
 
 **Batch 2 COMPLETE (July 2026):** #18 clause permalink, #14 pending history (board+), #6 my submissions, #7 tag management (UPPERCASE renames + delete — retires the mixed-case tag audit), #3 CSV export.
 
-**Still unimplemented:** #2 bulk stale-embedding regeneration, #4 per-clause history on browse cards (largely subsumed by #18's permalink History section), #8 document registry, #12 Q&A analytics (build once the question log has weeks of data), #13 flag-from-question, #15 flag↔clause fix links, #16 flag assignment/email, #17 flag meeting report.
+**Item status audit (July 2026):**
+
+| Marker | Meaning |
+|---|---|
+| ✅ DONE | Shipped and live |
+| ❌ REDUNDANT | No longer needed — superseded by shipped work; do not build |
+| ⚠️ CHANGED | Still worth building, but the notes below were written pre-Priority-Phase — read the CHANGED banner in the item before implementing |
+| ⬜ VALID | Unchanged and accurate as written |
+
+- ✅ DONE: #11, Roles Rebuild (#9+#10), #5, #1 (TTL only), #19, #18, #14, #6, #7, #3
+- ❌ REDUNDANT: **#4** (per-clause history — fully covered by #18's clause page)
+- ⚠️ CHANGED: **#12, #13, #15, #16, #8, #17** (dependencies shipped or role model changed — see banners)
+- ⬜ VALID: **#2** (bulk stale-embedding regeneration)
 
 This document describes improvements to the PLCA HOA admin console and public chatbot backend. It is written so a developer who has **not** read the codebase can execute any item. The **Priority Phase** (in order: #11 → Roles Rebuild → #5 → #1 → #19) should be implemented first. The **Roles Rebuild** is a new item (July 2026 owner decision) that absorbs #9 and #10 and replaces the ad-hoc superuser-set + `is_approver` model with a three-tier `role` column. The remaining items are grouped by audience as **Future Phases** — treat those as a **menu, not a commitment**: for a volunteer-run HOA tool, the Priority Phase plus (eventually) #12 may be everything this project truly needs. Some items (e.g. #8 document registry) solve problems that occur roughly once a year and can reasonably stay code edits forever.
 
@@ -40,17 +52,18 @@ Key files:
 | File | Role |
 |---|---|
 | `app.py` (56 lines) | Public Flask API: `POST /ask` (line 10) and `POST /log` (line 34, forwards to a hardcoded Google Apps Script URL at line 45) |
-| `ask_gpt.py` (359 lines) | Answer pipeline: `get_all_clauses()` → `filter_relevant_clauses()` → `format_all_clauses_for_gpt()` → GPT-4o → citation post-processing. Module-level `_clause_cache` at line 16 |
-| `admin_app.py` (~1947 lines) | Entire admin console. `SUPERUSERS` set at line 88. Decorators `login_required` (line 135) and `superuser_required` (line 162) |
+| `ask_gpt.py` | Answer pipeline: `get_all_clauses()` (TTL-cached, `CLAUSE_CACHE_TTL` default 3600s) → `_score_clauses()`/`filter_relevant_clauses()` → `format_all_clauses_for_gpt()` → GPT-4o → citation post-processing. Debug seam: `filter_relevant_clauses_debug()` |
+| `admin_app.py` | Entire admin console. Roles: `ROLE_RANK`/`role_required(min_role)`/`login_required` (per-request `is_active` + role check); `superuser_required` is an alias for `role_required("superuser")`. Reusable diff seam: `build_field_diff()` |
 | `services.py` | Shared Supabase + OpenAI client factories (`supabase()`, `generate_embedding()`) |
-| `templates/` | 10 Jinja2 templates: `admin_base.html`, `admin_index.html`, `admin_login.html`, `admin_users.html`, `admin_pending.html`, `admin_audit.html`, `admin_search.html`, `admin_flags.html`, `admin_flag_detail.html`, `admin_change_password.html` |
+| `templates/` | 14 Jinja2 templates — the original 10 (`admin_base/index/login/users/pending/audit/search/flags/flag_detail/change_password.html`) plus `admin_questions.html`, `admin_clause_detail.html`, `admin_my_submissions.html`, `admin_tags.html` |
 
 Supabase tables: `clauses` (~712 rows; only `status='approved'` reaches residents), `admin_users`, `pending_changes`, `clause_audit_log` (append-only, never delete), `user_activity_log`, `clause_flags`, `clause_flag_comments`. One RPC: `match_clauses` (vector similarity — used only by the admin Search Test today, **not** by the resident pipeline).
 
 Conventions that apply to every item below:
 
-- New admin routes use `@app.get(...)`/`@app.post(...)` and must be wrapped in `@login_required` (superuser-only routes add `@superuser_required`).
-- Permission/UI visibility derives from the `SUPERUSERS` set (exposed to templates via the `inject_superuser` context processor at `admin_app.py:331`) — never hardcode names in templates.
+- New admin routes use `@app.get(...)`/`@app.post(...)` gated by `@login_required` / `@role_required("board")` / `@superuser_required` as appropriate.
+- Permission/UI visibility derives from the `admin_users.role` column via the context-processor vars (`is_superuser`, `is_approver`, `role`) — never hardcode names in templates.
+- **Update the Help & Reference panel (`admin_index.html`) with every user-visible change — it is a core part of the console, not an afterthought (owner directive, July 2026).**
 - Postgres array literals in the Supabase SQL editor use curly braces: `'{"TAG1","TAG2"}'`.
 - Always `SELECT` before destructive SQL; `clause_audit_log` is append-only.
 - Local dev venv: `/Users/thomasmasters/Projects/.venv/bin/python3` (admin on port 5051, backend on 5000).
@@ -355,6 +368,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 
 ### (#4) Per-Clause Change History on the Clause Card
 
+> **❌ REDUNDANT — do not build (July 2026).** #18's clause page (`/admin/clauses/<id>`) ships a Change History section (last 50 audit entries) plus pending changes and flags, and every browse-card clause ID badge links there. A lazy per-card expander on the browse list would duplicate it for no gain. Kept below for the record only.
+
 **What it does.** Every clause field change is already recorded in `clause_audit_log` keyed by `record_id` (see `_log_clause_field_changes()` at line 405 and `log_audit_event()` at line 383), but the only view is the global, superuser-only `/admin/audit` page (line 1422). This surfaces an expandable "History" section on each clause showing who changed which field, when, old → new.
 
 **Files/tables:** `admin_app.py`, `templates/admin_index.html` (clause cards live in the browse view).
@@ -403,6 +418,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 
 ### (#8) Document Registry (replace hardcoded `DOC_SHORT` maps)
 
+> **⚠️ CHANGED (July 2026).** #1 shipped as TTL-only (the cross-service refresh button was skipped), so drop the "needs #1's invalidation first" framing: registry edits reach residents within the ~1h `CLAUSE_CACHE_TTL` automatically, and the `invalidate_clause_cache()` seam exists in `ask_gpt.py` if instant propagation is ever wanted. Piggyback the registry cache on the same TTL.
+
 **What it does.** Adding a new governing document today requires editing two parallel dicts in `ask_gpt.py` — `DOC_SHORT` (line 48, token-saving abbreviations for the GPT prompt) and `DOC_SHORT_DISPLAY` (line 244, friendly names for citation links) — and redeploying. A small `documents` table (full name, short name, display name, default precedence) editable in the admin console makes onboarding a document a data change.
 
 **Files/tables:** new Supabase table `documents`; `ask_gpt.py` (both maps become table-backed lookups); `admin_app.py` + new template `admin_documents.html` (CRUD page, superuser-only).
@@ -428,6 +445,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 
 ### (#12) Q&A Analytics Dashboard (built on #11)
 
+> **⚠️ CHANGED (July 2026).** Every dependency now exists: the question log is live (with the `whimsy` flag for filtering), the questions page has fallback/no-citation filters to deep-link into, #7 provides the clean tag vocabulary for topic bucketing, and cited clauses can link to #18 permalinks. **The only thing missing is data** — build this once the log has 3–4 weeks of real resident traffic. Gate it `role_required("board")` like the questions page.
+
 **What it does.** Once resident questions are logged (#11), this page answers the board's real questions: What are residents asking most? Which questions fell back to full corpus (no relevance signal — likely uncovered topics)? Which answers cited nothing? Which clauses are *never* cited (candidates for consolidation)? It turns the question log into a prioritized worklist for the document revision committee.
 
 **Files/tables:** reads `resident_questions` (+ `clauses` for never-cited analysis); `admin_app.py` (new `GET /admin/analytics`), new template `admin_analytics.html`, nav link.
@@ -448,6 +467,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 ---
 
 ### (#13) "Flag This Topic" from Real Resident Questions
+
+> **⚠️ CHANGED (July 2026).** #11 is live: the `resident_questions` table and `templates/admin_questions.html` both exist, so this is now just the button + pre-filled flag form + the nullable `source_question_id` column. Note the questions page is `role_required("board")`, which matches flag-closing permissions under the new role model.
 
 **What it does.** The CCR-revision flag workflow already supports topic flags carrying a question, an answer snapshot, and cited clause IDs (`create_flag()`, line 1822, writing to `clause_flags` with `flag_type='topic'` and `cited_clause_ids text[]`). But today an admin must re-type a resident question into the flag form. This adds a one-click "Flag this topic" button on each row of the resident question log (#11) that pre-populates a flag directly from the logged question, answer, and citations — connecting real resident confusion to the committee's queue.
 
@@ -484,6 +505,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 
 ### (#15) Link Flags to Clauses and to the Fix
 
+> **⚠️ CHANGED — roughly half shipped by #18 (July 2026).** Cited clause IDs on flag pages now link to clause permalinks, and each clause page lists the flags referencing it (both directions of the "link flags to clauses" half). **Remaining scope:** the `resolution_change_id` column + attach-a-pending-change-on-close flow, and the nice-to-have open-flag badge on the pending page. Ignore the "link to browse pre-filtered" workaround below — link to `clause_detail` instead.
+
 **What it does.** The flag detail page (`admin_flag_detail()`, line 1770) shows a clause snapshot but offers no "edit this clause" link, and topic flags list `cited_clause_ids` as plain text. Deliberation and action are disconnected: a committee member reading a flag can't jump to the clause, and a closed flag doesn't record what change (if any) resulted. This links flags → clause browse/edit, and optionally records the resulting `pending_changes.id` on the flag when it's closed as "Changed."
 
 **Files/tables:** `admin_app.py` (`admin_flag_detail`, `update_flag_status` at line 1887), `templates/admin_flag_detail.html`, `templates/admin_flags.html`; optional `resolution_change_id uuid` column on `clause_flags`.
@@ -498,6 +521,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 ---
 
 ### (#16) Flag Assignment and Email Notification
+
+> **⚠️ CHANGED (July 2026).** The role model replaced `is_approver`: the assignee dropdown and "notify all approvers" lists should query `role IN ('board','superuser')`, not the deprecated `is_approver` column. Everything else stands, including assignment-first sequencing.
 
 **What it does.** Flags have no owner and no push channel — committee members only discover new flags or new comments by logging in and looking. This adds an `assigned_to` field on flags plus email notifications (immediate or daily digest) on flag creation, assignment, and new comments, keeping a volunteer committee engaged without requiring habit-forming logins.
 
@@ -515,6 +540,8 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 ---
 
 ### (#17) Exportable Flag Report for Board Meetings
+
+> **⚠️ CHANGED (July 2026).** #3's CSV export shipped — reuse its `csv.DictWriter` + `Response` pattern in `export_clauses()` for the `?format=csv` variant. Clause citations should link to #18 permalinks (which now exist) in the HTML report. Gate `role_required("board")`.
 
 **What it does.** Each meeting cycle, the committee needs a summary of open flags — description, status, affected clauses, discussion notes — and today someone assembles it by hand from the flags pages. This adds a one-click export: a printable HTML report (and/or CSV) of flags filtered by status, including comment threads and affected-clause citations, that becomes the meeting agenda.
 
@@ -554,24 +581,26 @@ The remaining 14 items, grouped by primary audience. Within each group, items ar
 
 ## Suggested Sequencing & Dependency Summary
 
-| Order | Item | Depends on | Unlocks / enhances |
-|---|---|---|---|
-| 1 | #11 Resident question log (backend logging half) | — | #12, #13 (hard); #18, #19 (soft) |
-| 2 | Roles Rebuild (absorbs #9 + #10) | — | #11 admin page gate; security fix |
-| 2b | #11 admin page (`board`-and-up) | Roles Rebuild | — |
-| 3 | #5 Pending diff view | — | #6, #14, #15, #18 (reuse diff helper) |
-| 4 | #1 Cache TTL (Part B skipped) | — | #7, #8 (propagation without redeploy) |
-| 5 | #19 Honest search test (Option B) | — | tuning loop with #11/#12 data |
-| — | #2 bulk embeddings, #3 CSV export, #4 clause history, #6 my submissions | — | independent, small |
-| — | #7 tag management | best after #1 | — |
-| — | #8 document registry | best after #1 | — |
-| — | #12 analytics | **#11** + accumulated data | — |
-| — | #13 flag-from-question | **#11** | better with #15 |
-| — | #14 pending history | best after #5 | — |
-| — | #15 flag↔clause links | — | better with #18, #5 |
-| — | #16 flag assignment/email | — | assignment first, email v2 |
-| — | #17 flag report | — | shares CSV helper with #3 |
-| — | #18 clause permalink | — | integration hub; do after #11/#15 for max payoff |
+| Status | Item | Notes |
+|---|---|---|
+| ✅ | #11 question log + board-gated page | live; data accruing |
+| ✅ | Roles Rebuild (#9 + #10) | three tiers, per-request enforcement |
+| ✅ | #5 pending diff view | `build_field_diff()` seam reused everywhere |
+| ✅ | #1 cache TTL | Part B (refresh button) skipped by owner decision |
+| ✅ | #19 honest search test | shared `_score_clauses()`, prefilter preview |
+| ✅ | #18 clause permalink | integration hub; refs linkified console-wide |
+| ✅ | #14 pending history | board-and-up |
+| ✅ | #6 my submissions | all users |
+| ✅ | #7 tag management | UPPERCASE renames, delete, per-clause audit |
+| ✅ | #3 CSV export | round-trips with import template |
+| ❌ | #4 clause history on cards | redundant — covered by #18's clause page |
+| ⚠️ | #12 analytics | build after 3–4 weeks of question data |
+| ⚠️ | #13 flag-from-question | ready to build; needs `source_question_id` column |
+| ⚠️ | #15 flag↔fix links | half shipped via #18; remaining: `resolution_change_id` flow |
+| ⚠️ | #16 flag assignment/email | use `role IN ('board','superuser')`, not `is_approver` |
+| ⚠️ | #17 flag meeting report | reuse #3's CSV pattern; link to #18 permalinks |
+| ⬜ | #2 bulk stale embeddings | valid as written |
+| ⚠️ | #8 document registry | TTL covers propagation; rare need — may stay unbuilt |
 
 **Standing reminders for every item:**
 - hoa-admin has **no dev environment** — test locally against real Supabase, then deploy deliberately.

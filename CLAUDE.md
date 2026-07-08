@@ -56,15 +56,19 @@ hoa-backend/
 ├── CLAUDE.md
 └── templates/
     ├── admin_base.html
-    ├── admin_index.html
+    ├── admin_index.html          (includes the Help & Reference panel — keep in sync with features)
     ├── admin_login.html
     ├── admin_users.html
-    ├── admin_pending.html
+    ├── admin_pending.html        (Live Queue + History tabs)
     ├── admin_audit.html
     ├── admin_search.html
     ├── admin_flags.html
     ├── admin_flag_detail.html
-    └── admin_change_password.html
+    ├── admin_change_password.html
+    ├── admin_questions.html      (resident question log, board+)
+    ├── admin_clause_detail.html  (clause permalink pages)
+    ├── admin_my_submissions.html
+    └── admin_tags.html           (tag management, superuser)
 ```
 
 ---
@@ -269,9 +273,10 @@ Then: `rm /tmp/gen_hash.py`
 
 | Item | Status | Notes |
 |---|---|---|
-| Mixed-case tag audit | Pending | Remaining document families not yet audited |
+| Mixed-case tag audit | UI task now | `/admin/tags` (superuser) lists tags with mixed-case badges; rename to UPPERCASE from the page — no SQL needed |
 | UTC timestamp cleanup | Pending | Remove broken central_time filter; display clean UTC with label |
-| Help panel update | Pending | Update collapsible help in admin_index.html for all new features |
+| Help panel update | Done (July 2026) | **Standing rule: the Help & Reference panel in admin_index.html is a core part of the console — update it with every user-visible change** |
+| Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
 | MFA/TOTP | On hold | Use pyotp + qrcode; make optional not mandatory |
 
 ---
