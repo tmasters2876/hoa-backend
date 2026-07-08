@@ -97,6 +97,7 @@
   }
   .diff-old { color: var(--danger); text-decoration: line-through; font-size: 12px; }
   .diff-new { color: var(--accent); font-size: 12px; }
+  .diff-val { max-height: 140px; overflow-y: auto; word-break: break-word; }
   .filter-bar {
     display: flex;
     flex-wrap: wrap;
@@ -197,34 +198,20 @@
               {% endif %}
             </td>
             <td class="diff">
-              {% if entry.action == "create" %}
-                <div class="diff-row">
-                  <div class="diff-label">New clause</div>
-                  <div class="diff-new">{{ (entry.proposed_changes or {}).get("plain_summary") or (entry.proposed_changes or {}).get("clause_text") or "—" }}</div>
-                </div>
-              {% elif entry.action == "delete" %}
+              {% if entry.action == "delete" %}
                 <div class="diff-row">
                   <div class="diff-label">Delete clause</div>
-                  <div class="diff-old">{{ (entry.original_values or {}).get("plain_summary") or (entry.original_values or {}).get("clause_text") or "—" }}</div>
+                  <div class="diff-old diff-val">{{ (entry.original_values or {}).get("plain_summary") or (entry.original_values or {}).get("clause_text") or "—" }}</div>
                 </div>
-              {% elif entry.action == "edit" %}
-                {% set orig = entry.original_values or {} %}
-                {% set prop = entry.proposed_changes or {} %}
-                {% set tracked = ["clause_id","document","page","citation","clause_text","plain_summary","link","tags","precedence_level"] %}
-                {% set ns = namespace(shown=0) %}
-                {% for field in tracked %}
-                  {% set old_val = orig.get(field) %}
-                  {% set new_val = prop.get(field) %}
-                  {% if old_val|string != new_val|string %}
-                  {% set ns.shown = ns.shown + 1 %}
-                  <div class="diff-row">
-                    <div class="diff-label">{{ field }}</div>
-                    <div class="diff-old">{{ old_val if old_val is not none else "—" }}</div>
-                    <div class="diff-new">{{ new_val if new_val is not none else "—" }}</div>
-                  </div>
-                  {% endif %}
+              {% else %}
+                {% for d in entry.field_diffs %}
+                <div class="diff-row">
+                  <div class="diff-label">{{ d.field }}{% if entry.action == "create" %} <span class="muted">(new)</span>{% endif %}</div>
+                  {% if d.old is not none %}<div class="diff-old diff-val">{{ d.old }}</div>{% endif %}
+                  <div class="diff-new diff-val">{{ d.new if d.new is not none else "—" }}</div>
+                </div>
                 {% endfor %}
-                {% if ns.shown == 0 %}<span class="muted">no field changes</span>{% endif %}
+                {% if not entry.field_diffs %}<span class="muted">no field changes</span>{% endif %}
               {% endif %}
             </td>
             <td>

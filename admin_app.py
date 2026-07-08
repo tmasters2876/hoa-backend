@@ -247,6 +247,57 @@ def to_int_or_none(value):
         return None
 
 
+def build_field_diff(change: dict) -> list[dict]:
+    """Per-field old→new diff for a pending_changes row, computed in Python
+    so templates just render. Reusable by the pending page, and later by
+    #6 (my submissions) and #14 (pending history).
+
+    - underscore-prefixed keys (_verification etc.) are skipped, matching
+      _apply_pending_change
+    - None and "" compare equal (form round-trips must not read as changes)
+    - lists (tags) compare as lists, display comma-joined
+    - action='create': every proposed field renders as new
+    - action='delete': empty (the template's delete banner covers it)
+    """
+    def norm(v):
+        if v is None:
+            return ""
+        if isinstance(v, list):
+            return [str(x).strip() for x in v]
+        return str(v).strip()
+
+    def display(v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, list):
+            return serialize_tags(v)
+        return str(v)
+
+    action = change.get("action")
+    original = change.get("original_values") or {}
+    proposed = change.get("proposed_changes") or {}
+
+    if action == "delete":
+        return []
+
+    diffs = []
+    if action == "create":
+        for field in sorted(proposed):
+            if field.startswith("_"):
+                continue
+            if norm(proposed.get(field)) != "":
+                diffs.append({"field": field, "old": None, "new": display(proposed.get(field))})
+        return diffs
+
+    for field in sorted(set(original) | set(proposed)):
+        if field.startswith("_"):
+            continue
+        old, new = original.get(field), proposed.get(field)
+        if norm(old) != norm(new):
+            diffs.append({"field": field, "old": display(old), "new": display(new)})
+    return diffs
+
+
 def _validate_source_fields(form) -> list[str]:
     """Returns a list of error messages. Empty list means valid."""
     errors = []
@@ -333,9 +384,38 @@ def browse_clauses(keyword: str, tag: str, document: str, page: int, stale: bool
 
 
 def run_search_test(question: str, limit: int = 8) -> dict:
-    results = {"question": question, "vector": [], "keyword": []}
+    """Primary result: a PREFILTER PREVIEW running the exact production
+    scoring loop (ask_gpt._score_clauses via filter_relevant_clauses_debug),
+    so admins tune the pipeline residents actually get. The old vector +
+    keyword searches are kept as clearly-labeled legacy tools — the resident
+    bot uses neither. GPT is never called by this panel."""
+    results = {
+        "question": question,
+        "vector": [],
+        "keyword": [],
+        "prefilter": None,
+        "prefilter_enabled": os.getenv("ENABLE_CLAUSE_PREFILTER", "true").lower() != "false",
+    }
     if not question.strip():
         return results
+
+    try:
+        from ask_gpt import filter_relevant_clauses_debug, get_all_clauses
+        debug = filter_relevant_clauses_debug(question, get_all_clauses())
+        debug["top"] = [
+            {
+                "score": s,
+                "clause_id": c.get("clause_id"),
+                "document": c.get("document"),
+                "citation": c.get("citation"),
+                "summary": (c.get("plain_summary") or "")[:160],
+                "tags": serialize_tags(c.get("tags")),
+            }
+            for s, c in debug.pop("matched")[:25]
+        ]
+        results["prefilter"] = debug
+    except Exception as e:
+        print(f"[search-test] prefilter preview failed: {e}")
 
     query_embedding = generate_embedding(question)
     vector_result = supabase().rpc(
@@ -1625,6 +1705,7 @@ def admin_pending():
     for entry in entries:
         clause_uuid = entry.get("clause_id")
         entry["current_clause"] = fetch_clause(clause_uuid) if clause_uuid else None
+        entry["field_diffs"] = build_field_diff(entry)
 
     pending_filters = {"action_filter": action_filter, "who": who_filter}
     query_args = {k: v for k, v in pending_filters.items() if v}
