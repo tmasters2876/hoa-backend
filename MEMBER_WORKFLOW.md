@@ -8,13 +8,31 @@
 
 ## The big picture
 
-```
-REVIEW a clause  →  FLAG it for discussion  →  DISCUSS in the flag thread
-      →  PROPOSE a change  →  SUPERUSER APPROVAL (accuracy check)
-      →  live to residents within ~1 hour  →  permanent record kept
+```mermaid
+flowchart TD
+    subgraph YOU["👤 You — committee member"]
+        A["🔍 Review a clause"] --> B{"Needs committee<br/>discussion?"}
+        B -->|Yes| C["🏳 Flag it"]
+        C --> D["💬 Discuss in the<br/>flag thread"]
+        D --> E["✏️ Propose the change<br/><b>Submit for Approval</b>"]
+        B -->|"No — obvious fix"| E
+    end
+
+    subgraph SUPERUSERS["🛡 Superusers — president & developer"]
+        E --> F{"Accuracy<br/>check"}
+    end
+
+    F -->|Approved| G["✅ Live to residents<br/>within ~1 hour"]
+    F -->|Rejected| H["📋 Reason appears in<br/><b>My Submissions</b>"]
+    H -.->|"revise & retry"| D
+
+    style G fill:#e6f4ea,stroke:#34a853,color:#1e4620
+    style H fill:#fdecea,stroke:#ea4335,color:#5f1a12
+    style YOU fill:#f8f9fb,stroke:#c9cdd6
+    style SUPERUSERS fill:#f8f9fb,stroke:#c9cdd6
 ```
 
-You handle the first four steps. The final approval belongs to the two superusers (the HOA president and the developer) — that separation is deliberate and protects everyone, including you.
+You handle everything inside the first box. The final approval belongs to the two superusers (the HOA president and the developer) — that separation is deliberate and protects everyone, including you. A rejection is never a dead end: the reason is always written down, and the flag thread is where you regroup.
 
 ---
 
