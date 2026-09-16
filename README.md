@@ -29,14 +29,16 @@ Reviews the *tool itself* for accuracy: watches what residents actually ask (Res
 ### `superuser` — final approval authority
 Superusers are the final accuracy check on everything: **no clause change reaches residents without a superuser approving it**, and deletions require a *second* superuser. They also run user/role management, tag management, imports/exports, and the audit log. Self-approval of edits exists as a warned, audited, break-glass exception — it is never the norm.
 
-### The Final Approval clause
+### The Final Approval clause (amended by the owner, September 2026)
 
-In **all member-facing language** — MEMBER_WORKFLOW.md, the in-console Guide, the Help & Reference panel as seen by non-superusers, My Submissions, and any future member surface — the approval step is described only as **"final approval."** Never name who approves, how many approvers there are, or what mechanism is used. This ambiguity is deliberate and load-bearing: "final approval" legally corresponds to a board final vote, and where the governing documents require it, a 2/3 property-owner vote — and the internal mechanics behind it are expected to change. Member-facing language must never need to change with them.
+In **all member-facing language** — MEMBER_WORKFLOW.md, the in-console Guide, the Help & Reference panel as seen by non-superusers, My Submissions, and any future member surface — the approval step is described in **governance terms only**: the committee **proposes**, the **HOA Board approves or rejects** the submitted proposal, and a Board-approved proposal is **advanced to the community for the final vote**. A rejection always records its reason for the submitting member so the proposal can be revised and resubmitted. The canonical sequence is *Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote* (the Guide's workflow diagram).
+
+What member-facing language must **never** expose is the tool's internal mechanics: which console role applies a change, how many approvers there are, reviewer identities on decided items, or any superuser/board tooling. The governance terms are stable; the mechanics behind them are expected to change without member-facing language needing to. Before September 2026 the clause went further and allowed only the bare phrase "final approval"; the owner amended it so the Guide can name the Board and the community vote.
 
 ### Standing rules derived from the mandate
 
 - The `admin_users.role` column is the single source of truth for permissions. Enforcement is per-request.
-- Member-facing surfaces say only "final approval" (see the Final Approval clause above) and never reveal reviewer identities or superuser/board tooling.
+- Member-facing surfaces describe approval in governance terms only — Board approves/rejects, then community vote (see the Final Approval clause above) — and never reveal reviewer identities, approver counts, or superuser/board tooling.
 - Every new feature must serve the Revision mission, the Accuracy mission, or administration of the tool itself — or it doesn't get built.
 - No path may ever let a member-proposed change reach residents without superuser approval.
 - Deliberation (flags, comments) is permanent and append-only — it is the committee's record.

@@ -1,10 +1,12 @@
 """
 THE LAW — Final Approval clause enforcement (README.md).
 
-Member-facing surfaces must describe the approval step ONLY as "final
-approval": never who approves, how many, by what mechanism, and never
-reviewer identities on decided items. These tests fail if that ambiguity
-ever regresses.
+Member-facing surfaces describe approval in governance terms only (the
+committee proposes, the HOA Board approves or rejects, the community holds
+the final vote — see tests/test_guide_workflow.py) and must never expose the
+tool's internal mechanics: which console role applies a change, how many
+approvers, or reviewer identities on decided items. These tests fail if
+that ever regresses.
 """
 import os
 from datetime import datetime, timezone

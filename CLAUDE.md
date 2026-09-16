@@ -1,6 +1,6 @@
 # CLAUDE.md — PLCA HOA Backend
 
-Last updated: April 2026
+Last updated: September 2026
 
 ## Project Overview
 
@@ -57,6 +57,7 @@ hoa-backend/
 └── templates/
     ├── admin_base.html
     ├── admin_index.html          (includes the Help & Reference panel — keep in sync with features)
+    ├── admin_guide.html          (renders MEMBER_WORKFLOW.md; mermaid ELK renderer + workflow-lane tints)
     ├── admin_login.html
     ├── admin_users.html
     ├── admin_pending.html        (Live Queue + History tabs)
@@ -105,6 +106,8 @@ Unit tests for `filter_relevant_clauses()` live in `tests/test_ask_gpt.py` (pure
 **Admin search**: `admin_app.py` `/admin/search` calls `answer_question(output_format="json")` — do not re-add old `fetch_matching_clauses` imports.
 
 ### hoa-admin (admin console)
+
+**Committee Member Guide** (`/admin/guide`) renders `MEMBER_WORKFLOW.md` in-console; the `.md` is the single source of truth (it is also what GitHub shows). Its workflow diagram is a mermaid flowchart with three subgraph lanes — `COMMITTEE`, `BOARD`, `COMMUNITY` — rendered with mermaid's **ELK** layout (`flowchart.defaultRenderer = "elk"` in `admin_guide.html`): dagre pushes the lanes sideways and crosses arrows as soon as there is a loop-back edge, ELK keeps them stacked with orthogonal arrows. ELK ignores mermaid `style` on subgraphs, so the lane tints live in `admin_guide.html` CSS keyed on the lane ids (`flowchart-BOARD-…`); the `style` lines in the `.md` cover dagre renders (GitHub). Keep the diagram free of `-.->` loop-backs — the resubmit path is carried by the Rejected node's label. Tests: `tests/test_guide_workflow.py`.
 
 All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY` required in env (no default). `ProxyFix` middleware captures real IPs via `X-Forwarded-For`.
 
@@ -166,9 +169,9 @@ The tool has exactly two missions: **Revision** (support the Document Revision C
 2. **`board` — the accuracy reviewer.** Reviews the tool itself for accuracy: Resident Questions, flagging/correcting database inaccuracies, closing flags, decision history. Includes everything member can do.
 3. **`superuser` — final approval authority.** No clause change reaches residents without a superuser approving it; deletions require a *second* superuser. Self-approval of edits is a warned, audited, break-glass exception — never the norm. Also: user/role/tag management, imports/exports, audit log.
 
-**The Final Approval clause:** in ALL member-facing language (MEMBER_WORKFLOW.md / the in-console Guide, the Help panel as non-superusers see it, My Submissions, any future member surface) the approval step is described only as **"final approval"** — never who approves, how many, or by what mechanism, and never reviewer identities on decided items. The ambiguity is deliberate: "final approval" legally maps to a board final vote (or a 2/3 property-owner vote where required), and the internal mechanics will change without member-facing language needing to.
+**The Final Approval clause (amended Sept 2026):** in ALL member-facing language (MEMBER_WORKFLOW.md / the in-console Guide, the Help panel as non-superusers see it, My Submissions, any future member surface) the approval step is described in **governance terms only**: the committee proposes, the **HOA Board approves or rejects**, and a Board-approved proposal is **advanced to the community for the final vote**; rejections record the reason so the member can revise and resubmit. Canonical sequence: *Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote*. Never expose the tool's internal mechanics — which console role applies a change, how many approvers, reviewer identities on decided items, or superuser/board tooling. (Until Sept 2026 the clause allowed only the bare phrase "final approval"; the owner amended it so the Guide can name the Board and the community vote.)
 
-**Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; member-facing surfaces obey the Final Approval clause; deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
+**Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; member-facing surfaces obey the Final Approval clause (governance terms only, never internal mechanics); deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
 
 ## Authentication & User Roles
 

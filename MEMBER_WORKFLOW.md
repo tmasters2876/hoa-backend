@@ -10,29 +10,36 @@
 
 ```mermaid
 flowchart TD
-    subgraph YOU["👤 You — committee member"]
-        A["🔍 Review a clause"] --> B{"Needs committee<br/>discussion?"}
-        B -->|Yes| C["🏳 Flag it"]
+    subgraph COMMITTEE["👤 Committee — reviews, discusses, proposes"]
+        A["🔍 Review a clause"] --> C["🏳 Flag items that need<br/>committee discussion"]
         C --> D["💬 Discuss in the<br/>flag thread"]
         D --> E["✏️ Propose the change<br/><b>Submit for Approval</b>"]
-        B -->|"No — obvious fix"| E
     end
 
-    subgraph APPROVAL["🗳 Final Approval"]
-        E --> F{"Accuracy<br/>check"}
+    subgraph BOARD["🏛 HOA Board — approves or rejects"]
+        F{"Board reviews the<br/>submitted proposal"}
+        F -->|Approved| G["✅ Board Approved<br/>Staged for Community Vote"]
+        F -->|Rejected| R["✖ Rejected<br/>Reason recorded in <b>My Submissions</b><br/>→ revise &amp; resubmit"]
     end
 
-    F -->|Approved| G["✅ Live to residents<br/>within ~1 hour"]
-    F -->|Rejected| H["📋 Reason appears in<br/><b>My Submissions</b>"]
-    H -.->|"revise & retry"| D
+    subgraph COMMUNITY["🗳 Community — final vote"]
+        V["🗳 Community Vote"]
+    end
+
+    E -->|"submitted to the Board"| F
+    G -->|"advanced to the community"| V
 
     style G fill:#e6f4ea,stroke:#34a853,color:#1e4620
-    style H fill:#fdecea,stroke:#ea4335,color:#5f1a12
-    style YOU fill:#f8f9fb,stroke:#c9cdd6
-    style APPROVAL fill:#f8f9fb,stroke:#c9cdd6
+    style R fill:#fdecea,stroke:#ea4335,color:#5f1a12
+    style V fill:#ede7f6,stroke:#673ab7,color:#311b92
+    style COMMITTEE fill:#f8f9fb,stroke:#c9cdd6
+    style BOARD fill:#eef4fb,stroke:#9fbbe0
+    style COMMUNITY fill:#f5f1fb,stroke:#c3b1e1
 ```
 
-You handle everything inside the first box. Final approval happens after you, by design — the committee proposes, it does not ratify, and that separation protects everyone, including you. A rejection is never a dead end: the reason is always written down, and the flag thread is where you regroup.
+**Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote**
+
+You handle the review, discussion, and proposal process inside the committee workflow. Final Board approval happens after your submission: the Board reviews the proposal and either approves or rejects it. If approved by the Board, the proposal is advanced to the community for final voting. If rejected, the reason is recorded in **My Submissions** so the proposal can be revised and resubmitted — a rejection is never a dead end, and the flag thread is where you regroup.
 
 ---
 
@@ -95,7 +102,7 @@ You cannot approve anything — including your own submissions. That's not a lim
 - Status: **awaiting review**, **approved**, or **rejected**.
 - Rejections always include the reviewer's written reason — read it, adjust, and resubmit if you still believe in the change.
 
-Approved changes reach the resident-facing chatbot automatically within about an hour.
+Once a change has been approved and takes effect, the resident-facing chatbot reflects it automatically within about an hour.
 
 ---
 
@@ -103,7 +110,7 @@ Approved changes reach the resident-facing chatbot automatically within about an
 
 | Not yours | Whose it is | Why |
 |---|---|---|
-| Approve / reject buttons | Final approval | Every change is ratified outside the committee — you propose, final approval decides |
+| Approve / reject buttons | The HOA Board | The Board approves or rejects each submitted proposal; approved proposals advance to the community vote. You propose — the Board decides |
 | Resident Questions page | Accuracy reviewers | Monitoring the resident tool's accuracy, separate from revision work |
 | User and tag management | Administration | Housekeeping of the tool itself, not deliberative |
 

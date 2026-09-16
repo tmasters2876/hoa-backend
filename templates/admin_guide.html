@@ -29,6 +29,11 @@
   .guide-md th { background: var(--surface-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
   .guide-md blockquote { border-left: 3px solid var(--accent); margin: 10px 0; padding: 2px 14px; color: var(--muted); }
   .guide-md .mermaid { display: flex; justify-content: center; margin: 18px 0; }
+  /* Workflow lanes (ELK renderer ignores mermaid `style` on subgraphs, so tint
+     them here; the `style` lines in MEMBER_WORKFLOW.md cover dagre renders, e.g. GitHub). */
+  .guide-md .mermaid g.subgraph:has([id^="flowchart-COMMITTEE-"]) > rect { fill: #f8f9fb !important; stroke: #c9cdd6 !important; }
+  .guide-md .mermaid g.subgraph:has([id^="flowchart-BOARD-"]) > rect     { fill: #eef4fb !important; stroke: #9fbbe0 !important; }
+  .guide-md .mermaid g.subgraph:has([id^="flowchart-COMMUNITY-"]) > rect { fill: #f5f1fb !important; stroke: #c3b1e1 !important; }
 </style>
 
 <div class="panel guide-md">
@@ -37,6 +42,11 @@
 
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
-  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+  // ELK layout keeps the workflow lanes stacked top-to-bottom with orthogonal,
+  // non-crossing arrows; dagre (the default) pushes lanes sideways.
+  mermaid.initialize({
+    startOnLoad: true, theme: "neutral", securityLevel: "loose",
+    flowchart: { defaultRenderer: "elk" },
+  });
 </script>
 {% endblock %}
