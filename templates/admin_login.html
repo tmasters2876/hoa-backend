@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PLCA Admin — Sign In</title>
+    <title>{% if dev_mode %}[DEV] {% endif %}PLCA Admin — Sign In</title>
     <style>
       :root {
         --accent: #0f6e56;
@@ -116,6 +116,11 @@
       <div class="login-card">
         <div class="login-title">HOA Admin Console</div>
         <div class="login-sub">Plantation Lakes Community Assoc.</div>
+        {% if dev_mode %}
+        <div class="flash" style="border-color:#f0c040; background:#fef3c7; color:#7a5200;">
+          <strong>DEV · local sandbox.</strong> Local Supabase, seeded from a copy of production. Every account signs in with the dev password (see dev/README.md).
+        </div>
+        {% endif %}
 
         {% with flashes = get_flashed_messages(with_categories=true) %}
           {% for category, message in flashes %}

@@ -53,8 +53,17 @@ What member-facing language must **never** expose is the tool's internal mechani
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 python app.py                 # public API, port 5000
-python admin_app.py           # admin console, PORT env (local: 5051)
+python admin_app.py           # admin console against the .env Supabase, PORT env (local: 5051)
 python -m pytest tests/ -q    # offline test suite
 ```
+
+**Admin console sandbox** — a local Supabase stack (Docker) seeded with a copy of
+production, for UI/UX work that must not touch production:
+
+```bash
+cd dev && ./dev.sh up && ./dev.sh seed && ./dev.sh run   # http://localhost:5052, password devpass123
+```
+
+See [dev/README.md](dev/README.md).
 
 `main` auto-deploys **both** services on push — work on a branch, merge deliberately. See [CLAUDE.md](CLAUDE.md) for environment variables, schema, and conventions.

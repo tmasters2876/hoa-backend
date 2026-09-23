@@ -185,3 +185,7 @@ delete_stub_clauses.py
 validate_missing_clauses.py
 import_missing_clauses.py
 missing_candidates_*.csv
+# Local DEV environment (dev/README.md)
+dev/.env.dev
+dev/supabase/.branches/
+dev/supabase/.temp/

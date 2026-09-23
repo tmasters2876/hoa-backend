@@ -29,6 +29,32 @@ app.secret_key = os.environ["SECRET_KEY"]
 app.permanent_session_lifetime = timedelta(hours=8)
 
 
+# ── DEV mode (dev/README.md) ──────────────────────────────────────────────────
+# HOA_ENV=dev marks a local sandbox: the console shows a DEV badge on every
+# page, templates auto-reload, and startup refuses any Supabase URL that is
+# not localhost — so a mis-set .env can never point the sandbox at production.
+
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")
+
+
+def is_dev_mode() -> bool:
+    return os.getenv("HOA_ENV", "").strip().lower() == "dev"
+
+
+def assert_dev_supabase_is_local(url: str | None = None) -> None:
+    """Raise if DEV mode is on but SUPABASE_URL is not a local stack.
+    Called at startup only (never per request, never in tests unless invoked)."""
+    if not is_dev_mode():
+        return
+    url = url if url is not None else os.getenv("SUPABASE_URL", "")
+    if not any(h in url for h in _LOCAL_HOSTS):
+        raise RuntimeError(
+            f"HOA_ENV=dev but SUPABASE_URL is not local ({url!r}). "
+            "Refusing to start — the DEV console must never touch production. "
+            "Run dev/dev.sh up to generate dev/.env.dev."
+        )
+
+
 
 @app.after_request
 def no_cache(response):
@@ -490,6 +516,7 @@ def inject_superuser():
         "role": role,
         "pending_count": pending_count,
         "open_flags_count": open_flags_count,
+        "dev_mode": is_dev_mode(),
     }
 
 
@@ -2480,4 +2507,11 @@ def admin_search():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5051))
-    app.run(debug=False, host="0.0.0.0", port=port, threaded=False)
+    if is_dev_mode():
+        assert_dev_supabase_is_local()
+        # Local sandbox: template + code auto-reload for UI/UX iteration.
+        app.config["TEMPLATES_AUTO_RELOAD"] = True
+        app.jinja_env.auto_reload = True
+        app.run(debug=True, host="127.0.0.1", port=port, threaded=False)
+    else:
+        app.run(debug=False, host="0.0.0.0", port=port, threaded=False)

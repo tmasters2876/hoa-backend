@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PLCA Admin Console</title>
+    <title>{% if dev_mode %}[DEV] {% endif %}PLCA Admin Console</title>
     <style>
       :root {
         --sidebar-bg: #1a2820;
@@ -82,6 +82,18 @@
         font-size: 11px;
         color: rgba(255,255,255,0.35);
         margin-top: 3px;
+      }
+      .dev-badge {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 2px 8px;
+        border-radius: var(--radius-pill);
+        background: var(--sidebar-badge);
+        color: #fff8e6;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .sidebar-nav {
@@ -884,6 +896,7 @@
         <div class="sidebar-brand">
           <div class="sidebar-brand-name">Plantation Lakes<br>Community Assoc.</div>
           <div class="sidebar-brand-sub">Admin Console</div>
+          {% if dev_mode %}<div class="dev-badge" title="Local sandbox — this console is NOT connected to production">DEV · local sandbox</div>{% endif %}
         </div>
 
         <div class="sidebar-nav">

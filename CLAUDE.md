@@ -9,7 +9,7 @@ This repo powers two production services for Plantation Lakes Community Associat
 - **hoa-backend** — public-facing Flask API answering resident questions via a Carrd-embedded chatbot
 - **hoa-admin** — protected admin console (Flask + Jinja2) for board members and staff to manage the clause database, review pending changes, manage users, and run the CCR revision flag workflow
 
-**hoa-admin has no dev environment.** Changes go directly to production. Changes to hoa-backend are always tested on the dev service first (`../hoa-backend-dev/`), then applied independently to prod.
+**hoa-admin has a local dev environment** (`dev/`, added Sept 2026): a local Supabase stack in Docker seeded from a copy of production, run with `dev/dev.sh` — see [dev/README.md](dev/README.md). Test UI/UX changes there before pushing; pushing to `main` still deploys straight to production. Changes to hoa-backend (the public API) are tested on the dev service first (`../hoa-backend-dev/`), then applied independently to prod.
 
 ---
 
@@ -20,7 +20,8 @@ This repo powers two production services for Plantation Lakes Community Associat
 - **hoa-backend Render service**: public API, start command `python app.py`, port 5000
 - **hoa-admin Render service**: admin console, start command `python admin_app.py`, port assigned dynamically via `PORT` env var, URL: hoa-admin.onrender.com
 - **Local dev**:
-  - Admin: port 5051
+  - Admin sandbox (local Supabase, DEV badge): `cd dev && ./dev.sh up && ./dev.sh seed && ./dev.sh run` → port 5052 — [dev/README.md](dev/README.md)
+  - Admin against production data (rare; be careful): port 5051, `python admin_app.py` with the prod `.env`
   - Backend: port 5000
   - Always use full venv path: `/Users/thomasmasters/Projects/.venv/bin/python3`
   - Never use system `python3` (aliased to Homebrew)
@@ -54,6 +55,8 @@ hoa-backend/
 ├── requirements.txt
 ├── render.yaml          — Render deployment config
 ├── CLAUDE.md
+├── dev/                 — local DEV environment: dev.sh, seed_from_prod.py, supabase/ (config + schema migration)
+├── tests/               — offline pytest suite (mocked Supabase/OpenAI); run from the workspace .venv
 └── templates/
     ├── admin_base.html
     ├── admin_index.html          (includes the Help & Reference panel — keep in sync with features)
@@ -110,6 +113,8 @@ Unit tests for `filter_relevant_clauses()` live in `tests/test_ask_gpt.py` (pure
 **Committee Member Guide** (`/admin/guide`) renders `MEMBER_WORKFLOW.md` in-console; the `.md` is the single source of truth (it is also what GitHub shows). Its workflow diagram is a mermaid flowchart with three subgraph lanes — `COMMITTEE`, `BOARD`, `COMMUNITY` — rendered with mermaid's **ELK** layout (`flowchart.defaultRenderer = "elk"` in `admin_guide.html`): dagre pushes the lanes sideways and crosses arrows as soon as there is a loop-back edge, ELK keeps them stacked with orthogonal arrows. ELK ignores mermaid `style` on subgraphs, so the lane tints live in `admin_guide.html` CSS keyed on the lane ids (`flowchart-BOARD-…`); the `style` lines in the `.md` cover dagre renders (GitHub). Keep the diagram free of `-.->` loop-backs — the resubmit path is carried by the Rejected node's label. Tests: `tests/test_guide_workflow.py`.
 
 All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY` required in env (no default). `ProxyFix` middleware captures real IPs via `X-Forwarded-For`.
+
+**DEV mode** (`HOA_ENV=dev`, set only by `dev/dev.sh run`): `is_dev_mode()` exposes `dev_mode` to every template (DEV badge in the sidebar, login page and `<title>`); `assert_dev_supabase_is_local()` makes startup refuse a non-local `SUPABASE_URL`; Flask runs with debug/reloader and Jinja auto-reload on 127.0.0.1. Production never sets `HOA_ENV`, so none of this is active there. Tests: `tests/test_dev_mode.py`.
 
 ---
 
@@ -208,6 +213,7 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 SECRET_KEY                 (Flask session encryption — required, no default)
 OPENAI_EMBEDDING_MODEL     (default: text-embedding-ada-002)
+HOA_ENV                    (unset in production; "dev" = local sandbox, see dev/README.md)
 ```
 
 ---
@@ -302,7 +308,7 @@ Then: `rm /tmp/gen_hash.py`
 
 - Always read relevant source files before making changes
 - Never modify `app.py` or `ask_gpt.py` without confirming it won't break Carrd search
-- Test hoa-backend changes locally before pushing; hoa-admin has no dev — changes go direct to prod
+- Test hoa-backend changes locally before pushing; test hoa-admin UI/UX changes in the local sandbox (`dev/dev.sh run`, seeded from prod) — pushing to `main` still deploys direct to prod
 - Both services deploy from the same repo on push
 - Always `SELECT` before any `INSERT` to check for existing rows
 - Mac is Apple Silicon (arm64) running macOS
