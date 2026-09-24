@@ -556,6 +556,8 @@
       details.clause-details > summary::-webkit-details-marker { display: none; }
       details.clause-details > summary::before { content: "✎  Edit / Actions"; }
       details.clause-details[open] > summary::before { content: "▲  Close"; }
+      details.clause-details.read-only > summary::before { content: "☰  Read clause"; }
+      details.clause-details.read-only[open] > summary::before { content: "▲  Close"; }
 
       /* ── Help panel ── */
       details.help-panel { margin-bottom: 4px; }
@@ -920,6 +922,7 @@
             Search
           </a>
 
+          {% if can_edit_db %}
           <a href="{{ url_for('my_submissions') }}"
              class="nav-item {% if request.endpoint == 'my_submissions' %}active{% endif %}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -928,6 +931,7 @@
             </svg>
             My Submissions
           </a>
+          {% endif %}
 
           <a href="{{ url_for('member_guide') }}"
              class="nav-item {% if request.endpoint == 'member_guide' %}active{% endif %}">

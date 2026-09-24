@@ -89,10 +89,10 @@ def test_diagram_has_three_lanes_in_governance_order():
 def test_diagram_committee_lane_covers_review_flag_discuss_propose():
     d = _diagram()
     lane = d[d.index("subgraph COMMITTEE"):d.index("subgraph BOARD")]
-    for step in ("Review a clause", "Flag items", "Discuss in the", "Propose the change", "Submit for Approval"):
+    for step in ("Review a clause", "Flag items", "Discuss in the", "Propose the revised language", "in the flag thread"):
         assert step in lane, f"committee lane missing '{step}'"
-    # the button label in the diagram must match the real button in the console
-    assert "<b>Submit for Approval</b>" in lane
+    # members never see the database edit form, so the diagram must not point at it
+    assert "Submit for Approval" not in lane
 
 
 def test_diagram_board_lane_approves_or_rejects():
@@ -102,7 +102,7 @@ def test_diagram_board_lane_approves_or_rejects():
     assert "Board reviews the" in lane
     assert "|Approved|" in lane and "|Rejected|" in lane
     assert "Board Approved" in lane and "Staged for Community Vote" in lane
-    assert "Reason recorded in <b>My Submissions</b>" in lane
+    assert "Reason recorded on the <b>flag</b>" in lane
     assert "resubmit" in lane
 
 
@@ -130,7 +130,7 @@ def test_explanatory_text_mentions_board_then_community_vote():
     intro = md[md.index("## The big picture"):md.index("## Step 0")]
     low = intro.lower()
     assert "committee review → committee proposal → board approval / rejection → community vote" in low
-    assert "final board approval happens after your submission" in low
+    assert "final board approval happens after the committee's proposal is submitted" in low
     assert "advanced to the community for final voting" in low
     assert "revised and resubmitted" in low
     assert "does not ratify" not in low
@@ -155,7 +155,7 @@ def test_guide_page_renders_governance_diagram_for_members(client, mock_supabase
     diagram = m.group(1)
     for needle in ("subgraph COMMITTEE", "subgraph BOARD", "subgraph COMMUNITY",
                    "HOA Board", "Board Approved", "Staged for Community Vote",
-                   "Community Vote", "My Submissions"):
+                   "Community Vote", "in the flag thread"):
         assert needle in diagram, f"rendered diagram missing {needle!r}"
     assert "Live to residents" not in html
     assert "&lt;br/&gt;" not in diagram            # html un-escaped for mermaid.js

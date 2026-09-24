@@ -21,7 +21,7 @@ The tool exists for exactly two missions:
 Three roles, three purposes:
 
 ### `member` — the Document Revision Committee
-Community volunteers, plus a board member and an ARC member, revising the governing documents. Members **review** the current clauses (which constitute the actual governing documents), **flag and discuss** what should change, **propose** changes, and **track** their submissions. Their work product feeds the drafting of the new governing documents. Members can never approve a change — their own or anyone's — and never see accuracy tooling. Workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md).
+Community volunteers, plus a board member and an ARC member, revising the governing documents. Members **review** the current clauses (which constitute the actual governing documents), **flag and discuss** what should change, and **propose** revised language in the flag thread. Their work product is the new governing documents. **Members revise the documents, never the database** (amended by the owner, Sept 2026): they never see edit forms, Add/Delete Clause, My Submissions, pending or decided changes, change history, embeddings, source verification, or the Search Test — the database is updated to match the ratified documents afterward, by board-and-up. Members can never approve anything and never see accuracy tooling. Workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md).
 
 ### `board` — the accuracy reviewer
 Reviews the *tool itself* for accuracy: watches what residents actually ask (Resident Questions), flags and corrects inaccuracies in the clause database that powers the front-end search tool, closes revision flags, and reads the decision history. Includes everything `member` can do.
@@ -40,7 +40,8 @@ What member-facing language must **never** expose is the tool's internal mechani
 - The `admin_users.role` column is the single source of truth for permissions. Enforcement is per-request.
 - Member-facing surfaces describe approval in governance terms only — Board approves/rejects, then community vote (see the Final Approval clause above) — and never reveal reviewer identities, approver counts, or superuser/board tooling.
 - Every new feature must serve the Revision mission, the Accuracy mission, or administration of the tool itself — or it doesn't get built.
-- No path may ever let a member-proposed change reach residents without superuser approval.
+- No path may ever let a member change the clause database: every create/edit/delete/re-embed route and My Submissions is gated board-and-up (`db_change_required`), and every such surface in the templates is behind `can_edit_db`.
+- No path may ever let a board-proposed change reach residents without superuser approval.
 - Deliberation (flags, comments) is permanent and append-only — it is the committee's record.
 - Every state-changing action is audit-logged.
 - The Help & Reference panel in the console is core product: it ships updated with every user-visible change.

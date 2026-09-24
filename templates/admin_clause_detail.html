@@ -48,14 +48,15 @@
   <div class="panel">
     <div class="cd-meta">
       <span class="clause-id-badge">{{ clause.clause_id or clause.id }}</span>
-      {% if clause.status == 'approved' %}
+      {% if not can_edit_db %}
+      {% elif clause.status == 'approved' %}
         <span class="pill ok">approved</span>
       {% elif clause.status == 'pending' %}
         <span class="pill stale">pending — not visible to residents</span>
       {% else %}
         <span class="pill stale">{{ clause.status }}</span>
       {% endif %}
-      {% if clause.embedding_stale %}<span class="pill stale">stale embedding</span>{% endif %}
+      {% if clause.embedding_stale and can_edit_db %}<span class="pill stale">stale embedding</span>{% endif %}
       <span class="pill">precedence {{ clause.precedence_level }}</span>
     </div>
     <p style="font-size:13px;margin:4px 0;">
@@ -73,7 +74,8 @@
     {% endif %}
   </div>
 
-  {# ── Edit ── #}
+  {# ── Edit (board+; members revise documents through flags, never the database) ── #}
+  {% if can_edit_db %}
   <details class="panel collapsible-panel">
     <summary>Edit This Clause</summary>
     <form method="post" action="{{ url_for('update_clause', clause_id=clause.id) }}" class="stack" style="margin-top:12px;">
@@ -162,6 +164,7 @@
     </table>
     {% else %}<p class="muted">No pending or decided changes reference this clause.</p>{% endif %}
   </div>
+  {% endif %}
 
   {# ── Flags ── #}
   <div class="panel">
@@ -188,7 +191,8 @@
     {% else %}<p class="muted">No flags reference this clause.</p>{% endif %}
   </div>
 
-  {# ── History ── #}
+  {# ── History (board+) ── #}
+  {% if can_edit_db %}
   <div class="panel">
     <h2>Change History</h2>
     <p class="muted" style="font-size:12px;">Most recent 50 audit entries for this clause.</p>
@@ -210,6 +214,7 @@
     </table>
     {% else %}<p class="muted">No audit history recorded for this clause.</p>{% endif %}
   </div>
+  {% endif %}
 
 </div>
 {% endblock %}

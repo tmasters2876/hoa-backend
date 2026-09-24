@@ -244,6 +244,18 @@ def superuser_required(f):
     return role_required("superuser")(f)
 
 
+def db_change_required(f):
+    """Routes that create, edit, delete or re-embed clauses, or list one's own
+    database submissions. Board and up only: committee members revise the
+    governing documents through revision flags and never touch the clause
+    database (THE LAW, Sept 2026)."""
+    return role_required("board")(f)
+
+
+def _can_edit_db() -> bool:
+    return _role_rank(_current_role()) >= ROLE_RANK["board"]
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def supabase():
@@ -516,6 +528,10 @@ def inject_superuser():
         "role": role,
         "pending_count": pending_count,
         "open_flags_count": open_flags_count,
+        # THE LAW (Sept 2026): members revise the governing documents through
+        # flags; only board-and-up ever touch the clause database. Every
+        # database-changing surface in the templates is behind this flag.
+        "can_edit_db": rank >= ROLE_RANK["board"],
         "dev_mode": is_dev_mode(),
     }
 
@@ -817,14 +833,17 @@ def admin_home():
         flash("Search filter could not be applied — showing all clauses.", "error")
         clauses, total_count = browse_clauses(keyword="", tag=filters["tag"], document=filters["document"], page=1)
     documents, tags = get_filter_options()
-    search_test = run_search_test(filters["test_query"]) if filters["test_query"] else None
+    can_edit_db = _can_edit_db()
+    search_test = run_search_test(filters["test_query"]) if (filters["test_query"] and can_edit_db) else None
 
-    # Count clauses with stale embeddings for the dashboard banner
-    try:
-        stale_result = supabase().from_("clauses").select("id", count="exact").is_("embedding", "null").execute()
-        stale_count = stale_result.count or 0
-    except Exception:
-        stale_count = 0
+    # Count clauses with stale embeddings for the dashboard banner (board+ only)
+    stale_count = 0
+    if can_edit_db:
+        try:
+            stale_result = supabase().from_("clauses").select("id", count="exact").is_("embedding", "null").execute()
+            stale_count = stale_result.count or 0
+        except Exception:
+            stale_count = 0
 
     total_pages = max(1, math.ceil(total_count / PAGE_SIZE)) if total_count else 1
     query_args = {k: v for k, v in filters.items() if k != "page" and v}
@@ -865,7 +884,7 @@ def admin_home():
 
 
 @app.post("/admin/clauses")
-@login_required
+@db_change_required
 def create_clause():
     errors = _validate_source_fields(request.form)
     if errors:
@@ -917,7 +936,7 @@ def create_clause():
 
 
 @app.post("/admin/clauses/<clause_id>/update")
-@login_required
+@db_change_required
 def update_clause(clause_id: str):
     # form may carry a same-app "next" path (e.g. the clause permalink page)
     nxt = request.form.get("next", "")
@@ -984,7 +1003,7 @@ def update_clause(clause_id: str):
 
 
 @app.post("/admin/clauses/<clause_id>/update-json")
-@login_required
+@db_change_required
 def update_clause_json(clause_id: str):
     errors = _validate_source_fields(request.form)
     if errors:
@@ -1045,7 +1064,7 @@ def update_clause_json(clause_id: str):
 
 
 @app.post("/admin/clauses/<clause_id>/delete")
-@login_required
+@db_change_required
 def delete_clause(clause_id: str):
     existing = fetch_clause(clause_id)
     if not existing:
@@ -1068,7 +1087,7 @@ def delete_clause(clause_id: str):
 
 
 @app.post("/admin/clauses/<clause_id>/regenerate-embedding")
-@login_required
+@db_change_required
 def regenerate_clause_embedding(clause_id: str):
     clause = fetch_clause(clause_id)
     if not clause:
@@ -2053,7 +2072,7 @@ def member_guide():
 # ── My Submissions (#6) ───────────────────────────────────────────────────────
 
 @app.get("/admin/my-submissions")
-@login_required
+@db_change_required
 def my_submissions():
     """Every user can see their own pending/approved/rejected changes with
     reviewer notes. Deliberately NOT the /admin/pending route — that page
@@ -2118,15 +2137,17 @@ def clause_detail(key: str):
     uuid_id = str(clause["id"])
     text_id = clause.get("clause_id")
 
+    can_edit_db = _can_edit_db()
     history = []
-    try:
-        history = (
-            supabase().from_("clause_audit_log").select("*")
-            .eq("record_id", uuid_id)
-            .order("changed_at", desc=True).limit(50).execute()
-        ).data or []
-    except Exception as e:
-        print(f"[clause-detail] history fetch failed: {e}")
+    if can_edit_db:
+        try:
+            history = (
+                supabase().from_("clause_audit_log").select("*")
+                .eq("record_id", uuid_id)
+                .order("changed_at", desc=True).limit(50).execute()
+            ).data or []
+        except Exception as e:
+            print(f"[clause-detail] history fetch failed: {e}")
 
     flags = []
     try:
@@ -2150,16 +2171,17 @@ def clause_detail(key: str):
         print(f"[clause-detail] flags fetch failed: {e}")
 
     pending = []
-    try:
-        pending = (
-            supabase().from_("pending_changes").select("*")
-            .eq("clause_id", uuid_id)
-            .order("submitted_at", desc=True).limit(20).execute()
-        ).data or []
-        for p in pending:
-            p["field_diffs"] = build_field_diff(p)
-    except Exception as e:
-        print(f"[clause-detail] pending fetch failed: {e}")
+    if can_edit_db:
+        try:
+            pending = (
+                supabase().from_("pending_changes").select("*")
+                .eq("clause_id", uuid_id)
+                .order("submitted_at", desc=True).limit(20).execute()
+            ).data or []
+            for p in pending:
+                p["field_diffs"] = build_field_diff(p)
+        except Exception as e:
+            print(f"[clause-detail] pending fetch failed: {e}")
 
     return render_template(
         "admin_clause_detail.html",

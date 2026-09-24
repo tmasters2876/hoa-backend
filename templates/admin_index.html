@@ -5,7 +5,7 @@
   <span class="topbar-title">Clauses</span>
   <span class="topbar-sub">{{ total_count }} clause{{ 's' if total_count != 1 else '' }}</span>
   <div class="topbar-spacer"></div>
-  {% if stale_count > 0 %}
+  {% if stale_count > 0 and can_edit_db %}
   <a href="{{ url_for('admin_home') }}?stale=1" class="stale-chip">
     <span class="stale-dot"></span>
     {{ stale_count }} stale embedding{{ 's' if stale_count != 1 else '' }}
@@ -17,10 +17,11 @@
 {% block stat_tiles %}
 <div class="stat-row">
   <div class="stat-tile ok">
-    <div class="stat-label">Approved</div>
+    <div class="stat-label">{{ 'Approved' if can_edit_db else 'Clauses' }}</div>
     <div class="stat-num">{{ total_count }}</div>
-    <div class="stat-sub">visible to residents</div>
+    <div class="stat-sub">{{ 'visible to residents' if can_edit_db else 'across every governing document' }}</div>
   </div>
+  {% if can_edit_db %}
   <div class="stat-tile {% if stale_count > 0 %}warn{% endif %}">
     <div class="stat-label">Stale embeddings</div>
     <div class="stat-num">{{ stale_count }}</div>
@@ -31,6 +32,7 @@
     <div class="stat-num">{{ pending_count }}</div>
     <div class="stat-sub">awaiting final approval</div>
   </div>
+  {% endif %}
   <a href="{{ url_for('admin_flags') }}" style="text-decoration:none;">
     <div class="stat-tile {% if open_flags_count > 0 %}warn{% endif %}">
       <div class="stat-label">Open Revision Flags</div>
@@ -49,19 +51,34 @@
   <div class="help-content">
     <div class="help-section">
       <h3>New here? Start with the Guide</h3>
-      <p>The <a href="{{ url_for('member_guide') }}"><strong>Committee Member Guide</strong></a> (also <strong>Guide</strong> in the sidebar) walks through the whole workflow — review → flag → discuss → propose → approval — with a diagram. The sections below are the feature-by-feature reference.</p>
+      <p>The <a href="{{ url_for('member_guide') }}"><strong>Committee Member Guide</strong></a> (also <strong>Guide</strong> in the sidebar) walks through the whole workflow — review → flag → discuss → propose → Board approval → community vote — with a diagram. The sections below are the feature-by-feature reference.</p>
     </div>
     <div class="help-section">
       <h3>Browse &amp; Filters</h3>
       <p>Filter clauses by keyword (searches clause_id, citation, document, plain summary, and full clause text), document, or tag. Results are paginated at 25 per page. Active filters persist across page turns.</p>
+      {% if can_edit_db %}
       <p>Only clauses with <code>status = approved</code> are visible to residents via the Carrd chatbot. All statuses are visible here in the admin console. Approved changes reach residents automatically within the corpus cache window (~1 hour) — no redeploy needed.</p>
       <p>Clause cards show a <strong>⏳ Pending Approval</strong> badge when a change is queued but not yet approved. The live clause text remains unchanged until the pending change is approved.</p>
       <p>Cards with an orange left border have a <strong>stale embedding</strong> — the clause text has changed since the embedding was last generated (see Embeddings below for what that does and doesn't affect).</p>
+      {% else %}
+      <p>Each card is one clause of the current governing documents: its ID, source document and page, citation, precedence level, and tags. <strong>Read clause</strong> expands the plain-English summary and the verbatim text; <strong>View Source</strong> opens the recorded PDF; <strong>🏳 Flag</strong> opens a revision flag on that clause.</p>
+      {% endif %}
     </div>
     <div class="help-section">
       <h3>Clause Pages</h3>
+      {% if can_edit_db %}
       <p>Every clause has its own page at <code>/admin/clauses/&lt;CLAUSE_ID&gt;</code> — click any clause ID badge or link anywhere in the console to open it. The page shows the full clause, an edit form, its pending and decided changes with field diffs, any revision flags, and its change history — everything about one clause in one place.</p>
+      {% else %}
+      <p>Every clause has its own page — click any clause ID badge or link anywhere in the console to open it. The page shows the full clause, its source link, and every revision flag that references it. Use it as the reading page before you flag or discuss a clause.</p>
+      {% endif %}
     </div>
+    {% if not can_edit_db %}
+    <div class="help-section">
+      <h3>Revision Workflow</h3>
+      <p>The committee revises the <em>governing documents</em>, not this database. The database is the current documents, broken into clauses so you can read, search, and discuss them. The sequence is <strong>Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote</strong>: you review clauses, flag what should change, discuss it in the flag thread, and record the proposed language there; the HOA Board approves or rejects the proposal; a Board-approved proposal is advanced to the community for the final vote. Once the revised documents are ratified, this database is updated to match them.</p>
+    </div>
+    {% endif %}
+    {% if can_edit_db %}
     <div class="help-section">
       <h3>Approval Workflow</h3>
       <p>Every clause change — add, edit, or delete — requires <strong>final approval</strong> before it takes effect for residents. The governance sequence is <strong>Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote</strong>: the committee reviews, discusses, and proposes; the HOA Board approves or rejects the submitted proposal; a Board-approved proposal is advanced to the community for the final vote. Rejections always record the reason (see <strong>My Submissions</strong>) so a proposal can be revised and resubmitted. The <a href="{{ url_for('member_guide') }}">Guide</a> has the full workflow diagram.</p>
@@ -76,6 +93,7 @@
         <li>The Pending page's <strong>History tab</strong> lists every decided change with the decision, timestamp, and rejection reason — the permanent governance record.</li>
         {% endif %}
         <li><strong>My Submissions</strong> (in the sidebar) shows your own submitted changes, their status, and the written rejection reason if declined.</li>
+        <li>Committee members never see this workflow: they revise the governing documents through revision flags and never edit the clause database (THE LAW, README.md).</li>
       </ul>
     </div>
     <div class="help-section">
@@ -126,6 +144,7 @@
         <li>Model in use: <code>{{ embedding_model }}</code></li>
       </ul>
     </div>
+    {% endif %}
     {% if is_superuser %}
     <div class="help-section">
       <h3>Tag Management</h3>
@@ -137,15 +156,21 @@
       <h3>Export CSV</h3>
       <p>The <strong>Export CSV</strong> panel downloads the clause database honoring your current browse filters (keyword, tag, document, stale). Columns match the import template plus <code>id</code> and <code>status</code>, so export → edit → re-import round-trips. Use it for backups and offline committee review packets. Embeddings are excluded.</p>
     </div>
+    {% if can_edit_db %}
     <div class="help-section">
       <h3>Search Test</h3>
       <p>The primary result is a <strong>Prefilter Preview</strong>: it runs the exact scoring loop the resident bot uses (<code>filter_relevant_clauses</code>) and shows which clauses would be selected for a question, with per-clause scores — or whether the full-corpus <strong>FALLBACK</strong> would fire. GPT is never called, so this costs nothing; the full end-to-end test (which does call GPT) is the Search page.</p>
       <p>A collapsed <strong>Legacy search</strong> section still offers the old vector + keyword searches. The resident bot uses <em>neither</em> — they remain only as admin tools (e.g. finding near-duplicate clauses).</p>
       <p>Each legacy result row includes a <strong>Flag</strong> button — use it to flag a specific clause for revision directly from search results without leaving this page.</p>
     </div>
+    {% endif %}
     <div class="help-section">
-      <h3>Admin Search</h3>
-      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query through the <em>same pipeline as the resident-facing Carrd chatbot</em> (relevance prefilter → full-corpus GPT prompt → cited answer) — but with flagging capability built in. This calls GPT, so it costs tokens; for a free corpus-selection preview use the Search Test panel instead.{% if is_superuser or is_approver %} Admin searches are <em>not</em> logged to the resident question log.{% endif %}</p>
+      <h3>{{ 'Admin Search' if can_edit_db else 'Search' }}</h3>
+      {% if can_edit_db %}
+      <p>Available via <strong>Search</strong> in the sidebar. Runs a full GPT-powered Q&amp;A query through the <em>same pipeline as the resident-facing Carrd chatbot</em> (relevance prefilter → full-corpus GPT prompt → cited answer) — but with flagging capability built in. This calls GPT, so it costs tokens; for a free corpus-selection preview use the Search Test panel instead. Admin searches are <em>not</em> logged to the resident question log.</p>
+      {% else %}
+      <p>Available via <strong>Search</strong> in the sidebar. Ask a question the way a resident would and get the same answer the community chatbot gives, with every clause it relied on listed underneath. It is the fastest way to see how the current documents handle a topic — and whether they handle it at all.</p>
+      {% endif %}
       <ul>
         <li>The GPT answer is displayed at the top, followed by the cited clause cards that informed it.</li>
         <li>Each cited clause card has a <strong>Flag for Revision</strong> button to flag that specific clause.</li>
@@ -168,9 +193,12 @@
       <h3>Revision Flags</h3>
       <p>Available via <strong>Revision Flags</strong> in the sidebar. A deliberation tool for the CCR revision committee — flags do not change any clause data. The existing edit and approval workflow is downstream of this process.</p>
       <ul>
-        <li><strong>Clause flag</strong> — marks a specific clause for revision discussion. Triggered from the clause browse list, the Search Test results, or the Admin Search cited clause cards. The 🏳 Flag button on a clause card turns to 🚩 Flagged once an open flag exists.</li>
+        <li><strong>Clause flag</strong> — marks a specific clause for revision discussion. Triggered from the clause browse list{% if can_edit_db %}, the Search Test results,{% endif %} or the Search page's cited clause cards. The 🏳 Flag button on a clause card turns to 🚩 Flagged once an open flag exists.</li>
         <li><strong>Topic flag</strong> — captures a full Q&amp;A result (question, GPT answer, and cited clause IDs) when the concern spans multiple clauses or a broader policy area.</li>
         <li>Any logged-in user can create flags and add comments. Flags are closed by reviewers after deliberation.</li>
+        {% if not can_edit_db %}
+        <li>The flag thread is where the committee's proposal lives: once the discussion converges, post the proposed revised language as a comment so it is on the record for the Board.</li>
+        {% endif %}
         <li>Cited clause IDs on a flag link straight to their clause pages, and each clause page lists the flags that reference it.</li>
         <li>Statuses: <strong>Open</strong> → <strong>In Review</strong> → closed as <strong>No Change</strong>, <strong>Changed</strong>, or <strong>Deferred</strong>.</li>
         <li>The flag detail page shows the full clause or topic snapshot, original flag notes, a threaded comment history, and status management. Comments are permanent — they cannot be edited or deleted.</li>
@@ -199,7 +227,7 @@
     <div class="help-section">
       <h3>Your Account</h3>
       <ul>
-        <li>Change your own password from the <strong>Users</strong> page via <strong>Change Password</strong>.</li>
+        <li>Change your own password from the <strong>Account</strong> page via <strong>Change My Password</strong>.</li>
         <li>You cannot deactivate or delete your own account from the admin UI.</li>
         <li>Login sessions expire after 8 hours. Five failed sign-ins locks the account for 15 minutes.</li>
       </ul>
@@ -243,7 +271,8 @@
       </form>
     </div>
 
-    {# Add Clause — collapsed by default #}
+    {# Add Clause — collapsed by default (board+) #}
+    {% if can_edit_db %}
     <details class="panel collapsible-panel">
       <summary>Add Clause</summary>
       <form method="post" action="{{ url_for('create_clause') }}" class="stack" style="margin-top:14px;">
@@ -294,6 +323,7 @@
         {% endif %}
       </form>
     </details>
+    {% endif %}
 
     {# Export CSV #}
     <div class="panel">
@@ -347,7 +377,8 @@
     </div>
     {% endif %}
 
-    {# Search Test #}
+    {# Search Test (board+ accuracy tooling) #}
+    {% if can_edit_db %}
     <div class="panel">
       <h2>Search Test</h2>
       <p class="muted">Previews which clauses the resident bot's prefilter selects — the real production pipeline. No GPT call.</p>
@@ -362,6 +393,7 @@
         <button class="secondary" type="submit">Run Search Test</button>
       </form>
     </div>
+    {% endif %}
 
   </div>
 
@@ -395,13 +427,13 @@
 
             {# Always-visible header #}
             <div class="clause-head">
-              {% if clause.status == 'pending' %}
+              {% if clause.status == 'pending' and can_edit_db %}
                 <span class="status-dot pending"></span>
               {% else %}
                 <span class="status-dot approved"></span>
               {% endif %}
               <a class="clause-id-badge" href="{{ url_for('clause_detail', key=clause.clause_id or clause.id) }}" title="Open clause page">{{ clause.clause_id or clause.id }}</a>
-              {% if clause.embedding_stale %}<span class="badge-stale-inline">⚠️ Stale</span>{% endif %}
+              {% if clause.embedding_stale and can_edit_db %}<span class="badge-stale-inline">⚠️ Stale</span>{% endif %}
               <span class="clause-doc">{{ clause.document or "No document" }}{% if clause.page %} &bull; p.{{ clause.page }}{% endif %}</span>
               {% if clause.link %}
                 <a href="{{ clause.link }}" target="_blank" rel="noopener noreferrer" class="btn-view-source">📄 View Source</a>
@@ -430,13 +462,15 @@
               <div class="pill-row">
                 <span class="pill">{{ clause.citation or "no citation" }}</span>
                 <span class="pill">prec.&nbsp;{{ clause.precedence_level if clause.precedence_level is not none else "—" }}</span>
-                {% if clause.embedding_stale %}
-                  <span class="pill stale embedding-status-pill">embedding stale</span>
-                {% else %}
-                  <span class="pill ok embedding-status-pill">embedding ok</span>
-                {% endif %}
-                {% if clause.status == 'pending' %}
-                  <span class="pill stale">⏳ Pending Approval</span>
+                {% if can_edit_db %}
+                  {% if clause.embedding_stale %}
+                    <span class="pill stale embedding-status-pill">embedding stale</span>
+                  {% else %}
+                    <span class="pill ok embedding-status-pill">embedding ok</span>
+                  {% endif %}
+                  {% if clause.status == 'pending' %}
+                    <span class="pill stale">⏳ Pending Approval</span>
+                  {% endif %}
                 {% endif %}
                 {% for tag in (clause.tags or []) %}
                   <span class="pill">{{ tag }}</span>
@@ -444,7 +478,18 @@
               </div>
             </div>
 
-            {# Expandable edit area #}
+            {% if not can_edit_db %}
+            {# Members: read-only expander — summary + verbatim text #}
+            <details class="clause-details read-only">
+              <summary></summary>
+              <div class="clause-body">
+                {% if clause.plain_summary %}<div class="clause-summary-block">{{ clause.plain_summary }}</div>{% endif %}
+                {% if clause.clause_text %}<div class="clause-text-block" style="white-space:pre-wrap;">{{ clause.clause_text }}</div>{% endif %}
+                {% if not clause.plain_summary and not clause.clause_text %}<div class="muted">No text recorded for this clause.</div>{% endif %}
+              </div>
+            </details>
+            {% else %}
+            {# Expandable edit area (board+) #}
             <details class="clause-details">
               <summary></summary>
               <div class="clause-body">
@@ -511,6 +556,7 @@
                 </div>
               </div>
             </details>
+            {% endif %}
 
           </article>
         {% else %}
@@ -628,6 +674,7 @@
   </div>
 </div>
 
+{% if can_edit_db %}
 <script>
 (function () {
   document.addEventListener('submit', function (e) {
@@ -673,6 +720,7 @@
   });
 })();
 </script>
+{% endif %}
 
 {# Flag Modal #}
 <div id="flagModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:500; align-items:center; justify-content:center;">

@@ -136,7 +136,7 @@ def test_superuser_live_queue_unchanged(client, mock_supabase):
 # ── #6 my submissions ─────────────────────────────────────────────────────────
 
 def test_my_submissions_scoped_to_current_user(client, mock_supabase):
-    sess, load = login_session("member", username="clee")
+    sess, load = login_session("board", username="clee")  # board+: members never see submissions
     with sess, load, patch("admin_app.render_template", return_value="ok") as mock_render:
         resp = client.get("/admin/my-submissions")
     assert resp.status_code == 200

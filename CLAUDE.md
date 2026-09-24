@@ -170,7 +170,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 
 The tool has exactly two missions: **Revision** (support the Document Revision Committee in reviewing the current governing documents and building the new ones) and **Accuracy** (keep the clause database accurate, because it powers the front-end HOA search tool the community uses).
 
-1. **`member` — the Document Revision Committee.** Community volunteers + a board member + an ARC member revising the governing documents. They review current clauses, flag and discuss what should change, propose changes, and track their submissions (workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md)). They can never approve a change and never see accuracy tooling.
+1. **`member` — the Document Revision Committee.** Community volunteers + a board member + an ARC member revising the governing documents. They review current clauses, flag and discuss what should change, and propose revised language in the flag thread (workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md)). **They revise the documents, never the database** (owner amendment, Sept 2026): no edit forms, Add/Delete Clause, My Submissions, pending/decided changes, change history, embeddings, source verification or Search Test — routes are gated with `db_change_required` (board+) and template surfaces with `can_edit_db`. They can never approve anything and never see accuracy tooling.
 2. **`board` — the accuracy reviewer.** Reviews the tool itself for accuracy: Resident Questions, flagging/correcting database inaccuracies, closing flags, decision history. Includes everything member can do.
 3. **`superuser` — final approval authority.** No clause change reaches residents without a superuser approving it; deletions require a *second* superuser. Self-approval of edits is a warned, audited, break-glass exception — never the norm. Also: user/role/tag management, imports/exports, audit log.
 
@@ -182,8 +182,8 @@ The tool has exactly two missions: **Revision** (support the Document Revision C
 
 Three hierarchical tiers stored in the `admin_users.role` column (July 2026 Roles Rebuild — see `sql/002_roles.sql`); each tier includes everything below it and maps 1:1 to THE LAW above:
 
-1. **member** — browse clauses, submit changes, flags + comments, My Submissions, change own password
-2. **board** — close flags, resident questions, pending history, analytics; set via the role dropdown on the Users page (superusers only)
+1. **member** — browse and read clauses, Search, flags + comments, Guide, change own password (no database changes of any kind — see THE LAW)
+2. **board** — everything member can do, plus: submit clause edits/adds/deletes and re-embed (the database-maintenance workflow), My Submissions, close flags, resident questions, pending history; set via the role dropdown on the Users page (superusers only)
 3. **superuser** — full access: approvals, add/delete/deactivate users, reset passwords, audit log, tag management, self-approve pending changes (with warning), set roles
 
 **The DB `role` column is the single source of truth.** Enforcement is per-request in `login_required` (deactivation/deletion/role changes take effect on the user's next request, not at next login). Route gates use `role_required("<min_role>")`; `superuser_required` is an alias for `role_required("superuser")`. Permission checks and UI visibility derive from the role context (`is_superuser`/`is_approver`/`role` template vars) — never hardcode names in templates.
