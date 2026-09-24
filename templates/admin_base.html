@@ -954,6 +954,20 @@
           </a>
 
           {% if is_superuser or is_approver %}
+          <a href="{{ url_for('admin_board') }}"
+             class="nav-item {% if request.endpoint == 'admin_board' %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 6h12M4 6V4h8v2M3 6l1 8h8l1-8"/>
+              <path d="M6 9l1.5 1.5L10 8"/>
+            </svg>
+            Board Decisions
+            {% if board_queue_count > 0 %}
+            <span class="nav-badge">{{ board_queue_count }}</span>
+            {% endif %}
+          </a>
+          {% endif %}
+
+          {% if is_superuser or is_approver %}
           <a href="{{ url_for('admin_questions') }}"
              class="nav-item {% if request.endpoint == 'admin_questions' %}active{% endif %}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">

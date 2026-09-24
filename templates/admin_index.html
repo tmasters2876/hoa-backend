@@ -195,16 +195,21 @@
       <ul>
         <li><strong>Clause flag</strong> — marks a specific clause for revision discussion. Triggered from the clause browse list{% if can_edit_db %}, the Search Test results,{% endif %} or the Search page's cited clause cards. The 🏳 Flag button on a clause card turns to 🚩 Flagged once an open flag exists.</li>
         <li><strong>Topic flag</strong> — captures a full Q&amp;A result (question, GPT answer, and cited clause IDs) when the concern spans multiple clauses or a broader policy area.</li>
-        <li>Any logged-in user can create flags and add comments. Flags are closed by reviewers after deliberation.</li>
-        {% if not can_edit_db %}
-        <li>The flag thread is where the committee's proposal lives: once the discussion converges, post the proposed revised language as a comment so it is on the record for the Board.</li>
-        {% endif %}
-        <li>Cited clause IDs on a flag link straight to their clause pages, and each clause page lists the flags that reference it.</li>
-        <li>Statuses: <strong>Open</strong> → <strong>In Review</strong> → closed as <strong>No Change</strong>, <strong>Changed</strong>, or <strong>Deferred</strong>.</li>
-        <li>The flag detail page shows the full clause or topic snapshot, original flag notes, a threaded comment history, and status management. Comments are permanent — they cannot be edited or deleted.</li>
+        <li>Any logged-in user can create flags and add comments. Comments are permanent — they cannot be edited or deleted.</li>
+        <li><strong>Committee proposal.</strong> Every flag has a proposal panel — <em>current language</em> beside <em>proposed language</em>, plus where the language comes from. Any committee member can write or edit it while the flag is with the committee. This is what the Board reads and decides on.</li>
+        <li><strong>Submit to the Board.</strong> Once the committee agrees, any member clicks Submit to the Board. The proposal locks and the flag becomes <strong>Awaiting Board</strong>. Made a mistake? Any member can <strong>Recall</strong> it until the Board decides — the recall and its reason are recorded in the thread.</li>
+        <li><strong>Board decision.</strong> The Board records <strong>Board Approved</strong> (advanced to the community vote), <strong>Board Rejected</strong> (a reason is required and shown on the flag), or <strong>Deferred</strong>. A rejected or deferred flag can be <strong>reopened</strong> by any member to revise the proposal and resubmit; the earlier decision stays in the thread.</li>
+        <li>Statuses: <strong>Open</strong> → <strong>In Discussion</strong> → <strong>Awaiting Board</strong> → <strong>Board Approved</strong> / <strong>Board Rejected</strong> / <strong>Deferred</strong>. The Revision Flags page defaults to active flags; filter to see decided ones.</li>
+        <li>Cited clause IDs on a flag link straight to their clause pages, and each clause page lists the flags that reference it and has its own Flag for revision button.</li>
         <li>The <strong>Revision Flags</strong> nav item shows an orange badge when open flags exist.</li>
       </ul>
     </div>
+    {% if is_superuser or is_approver %}
+    <div class="help-section">
+      <h3>Board Decisions</h3>
+      <p><strong>Board and up</strong>, via <strong>Board Decisions</strong> in the sidebar (badge = proposals waiting). The <strong>Queue</strong> tab lists every flag the committee has submitted, with the current and proposed language side by side, who submitted it, and a link to the full thread. Record <strong>Approve</strong> (advances to the community vote), <strong>Reject</strong> (reason required — it is shown to the committee on the flag), or <strong>Defer</strong> right from the queue or from the flag page. The <strong>Decided</strong> tab is the history. Every decision is also written into the flag's thread and the audit log.</p>
+    </div>
+    {% endif %}
     {% if is_superuser %}
     <div class="help-section">
       <h3>Audit Log</h3>

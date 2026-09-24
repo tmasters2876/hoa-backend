@@ -522,7 +522,22 @@ def inject_superuser():
             pass
     role = _current_role() if session.get("logged_in") else None
     rank = _role_rank(role) if role else -1
+    board_queue_count = 0
+    if session.get("logged_in") and rank >= ROLE_RANK["board"]:
+        try:
+            r3 = (
+                supabase()
+                .from_("clause_flags")
+                .select("id", count="exact")
+                .eq("status", "awaiting_board")
+                .execute()
+            )
+            board_queue_count = r3.count or 0
+        except Exception:
+            pass
     return {
+        "flag_status_labels": FLAG_STATUS_LABELS,
+        "board_queue_count": board_queue_count,
         "is_superuser": rank >= ROLE_RANK["superuser"],
         "is_approver": rank == ROLE_RANK["board"],  # board only, matching old semantics
         "role": role,
@@ -2151,10 +2166,15 @@ def clause_detail(key: str):
 
     flags = []
     try:
-        direct = (
-            supabase().from_("clause_flags").select("*")
-            .eq("clause_id", uuid_id).execute()
-        ).data or []
+        # clause_flags.clause_id holds the TEXT id (FK → clauses.clause_id),
+        # not the row uuid. Querying by uuid here hid every clause flag from
+        # its own clause page (fixed Sept 2026).
+        direct = []
+        if text_id:
+            direct = (
+                supabase().from_("clause_flags").select("*")
+                .eq("clause_id", text_id).execute()
+            ).data or []
         topical = []
         if text_id:
             topical = (
@@ -2250,15 +2270,57 @@ def admin_questions():
 
 
 # ── CCR Revision Flags ────────────────────────────────────────────────────────
+#
+# Lifecycle (sql/003_board_review.sql):
+#   open → in_review → awaiting_board → closed_changed | closed_no_change | closed_deferred
+#   committee discusses      any member submits      the Board decides (Board Decisions page)
+#                            (recallable until decided)   rejected/deferred may be reopened
+# The closed_* values predate board review; the labels below are what users see.
+
+FLAG_STATUS_LABELS = {
+    "open": "Open",
+    "in_review": "In Discussion",
+    "awaiting_board": "Awaiting Board",
+    "closed_changed": "Board Approved",
+    "closed_no_change": "Board Rejected",
+    "closed_deferred": "Deferred",
+}
+FLAG_ACTIVE_STATUSES = ["open", "in_review", "awaiting_board"]
+FLAG_DECIDED_STATUSES = ["closed_changed", "closed_no_change", "closed_deferred"]
+FLAG_DECISIONS = {  # Board decision → status
+    "approved": "closed_changed",
+    "rejected": "closed_no_change",
+    "deferred": "closed_deferred",
+}
+
+
+def _flag_system_comment(flag_id: str, text: str) -> None:
+    """Append-only record of a lifecycle event in the flag's own thread."""
+    try:
+        supabase().from_("clause_flag_comments").insert({
+            "flag_id": flag_id,
+            "author": session.get("username"),
+            "comment": text,
+        }).execute()
+    except Exception as e:
+        print(f"[flags] WARNING: system comment failed: {e}")
+
+
+def _fetch_flag(flag_id: str) -> dict | None:
+    rows = (
+        supabase().from_("clause_flags").select("*").eq("id", flag_id).limit(1).execute()
+    ).data or []
+    return rows[0] if rows else None
+
 
 def _get_open_flag_clause_ids() -> set:
-    """Return set of clause_ids that have an open or in_review flag."""
+    """Return set of clause_ids that have an active (not yet decided) flag."""
     try:
         result = (
             supabase()
             .from_("clause_flags")
             .select("clause_id")
-            .in_("status", ["open", "in_review"])
+            .in_("status", FLAG_ACTIVE_STATUSES)
             .eq("flag_type", "clause")
             .execute()
         )
@@ -2270,19 +2332,23 @@ def _get_open_flag_clause_ids() -> set:
 @app.get("/admin/flags")
 @login_required
 def admin_flags():
-    status_filter = request.args.get("status", "open").strip()
+    status_filter = request.args.get("status", "active").strip()
     flag_type_filter = request.args.get("flag_type", "").strip()
     page = max(1, to_int_or_none(request.args.get("page")) or 1)
 
     query = supabase().from_("clause_flags").select("*", count="exact")
-    if status_filter and status_filter != "all":
+    if status_filter == "active":
+        query = query.in_("status", FLAG_ACTIVE_STATUSES)
+    elif status_filter == "decided":
+        query = query.in_("status", FLAG_DECIDED_STATUSES)
+    elif status_filter and status_filter != "all":
         query = query.eq("status", status_filter)
     if flag_type_filter:
         query = query.eq("flag_type", flag_type_filter)
 
     start = (page - 1) * FLAG_PAGE_SIZE
     end = start + FLAG_PAGE_SIZE - 1
-    result = query.order("created_at", desc=True).range(start, end).execute()
+    result = query.order("updated_at", desc=True).range(start, end).execute()
     flags = result.data or []
     total_count = result.count or 0
     total_pages = max(1, math.ceil(total_count / FLAG_PAGE_SIZE))
@@ -2353,19 +2419,10 @@ def admin_flags():
 @app.get("/admin/flags/<flag_id>")
 @login_required
 def admin_flag_detail(flag_id: str):
-    result = (
-        supabase()
-        .from_("clause_flags")
-        .select("*")
-        .eq("id", flag_id)
-        .limit(1)
-        .execute()
-    )
-    rows = result.data or []
-    if not rows:
+    flag = _fetch_flag(flag_id)
+    if not flag:
         flash("Flag not found.", "error")
         return redirect(url_for("admin_flags"))
-    flag = rows[0]
 
     # Load full clause if clause-type flag
     clause = None
@@ -2399,7 +2456,191 @@ def admin_flag_detail(flag_id: str):
         flag=flag,
         clause=clause,
         comments=comments,
+        proposal_editable=flag.get("status") in ("open", "in_review"),
+        can_decide=_role_rank(_current_role()) >= ROLE_RANK["board"],
     )
+
+
+# ── Proposal + Board review lifecycle ────────────────────────────────────────
+
+@app.post("/admin/flags/<flag_id>/proposal")
+@login_required
+def save_flag_proposal(flag_id: str):
+    """Any committee member records or revises the proposal on a flag while it
+    is still with the committee (open / in_review)."""
+    flag = _fetch_flag(flag_id)
+    if not flag:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_flags"))
+    if flag.get("status") not in ("open", "in_review"):
+        flash("The proposal is locked while the flag is with the Board. Recall it first to edit.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    proposal_text = request.form.get("proposal_text", "").strip()
+    if not proposal_text:
+        flash("Proposed language is required.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
+    now = datetime.now(timezone.utc).isoformat()
+    # keep the existing "current language" when the form did not carry the field
+    proposal_current = (request.form.get("proposal_current", flag.get("proposal_current") or "") or "").strip() or None
+    supabase().from_("clause_flags").update({
+        "proposal_current": proposal_current,
+        "proposal_text": proposal_text,
+        "proposal_source": request.form.get("proposal_source", "").strip() or None,
+        "proposal_updated_by": session.get("username"),
+        "proposal_updated_at": now,
+        "status": "in_review" if flag.get("status") == "open" else flag.get("status"),
+        "updated_at": now,
+    }).eq("id", flag_id).execute()
+    log_audit_event(action="flag_proposal_saved", clause_id=flag.get("clause_id"),
+                    notes=f"flag_id={flag_id}")
+    flash("Proposal saved. Submit it to the Board when the committee agrees.", "success")
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
+
+
+@app.post("/admin/flags/<flag_id>/submit")
+@login_required
+def submit_flag_to_board(flag_id: str):
+    """Any committee member sends the flag (with its proposal) to the Board."""
+    flag = _fetch_flag(flag_id)
+    if not flag:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_flags"))
+    if flag.get("status") not in ("open", "in_review"):
+        flash(f"This flag is {FLAG_STATUS_LABELS.get(flag.get('status'), flag.get('status'))} and cannot be submitted.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    if not (flag.get("proposal_text") or "").strip():
+        flash("Record the proposed language before submitting to the Board.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
+    now = datetime.now(timezone.utc).isoformat()
+    who = session.get("username")
+    supabase().from_("clause_flags").update({
+        "status": "awaiting_board",
+        "submitted_by": who,
+        "submitted_at": now,
+        "updated_at": now,
+    }).eq("id", flag_id).execute()
+    _flag_system_comment(flag_id, "📨 Submitted to the Board for approval.")
+    log_audit_event(action="flag_submitted_to_board", clause_id=flag.get("clause_id"),
+                    notes=f"flag_id={flag_id}")
+    flash("Submitted to the Board. You can recall it until the Board decides.", "success")
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+
+@app.post("/admin/flags/<flag_id>/recall")
+@login_required
+def recall_flag_from_board(flag_id: str):
+    """Any committee member pulls a submitted flag back before the Board decides."""
+    flag = _fetch_flag(flag_id)
+    if not flag:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_flags"))
+    if flag.get("status") != "awaiting_board":
+        flash("Only a flag awaiting the Board can be recalled.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    reason = request.form.get("reason", "").strip()
+    now = datetime.now(timezone.utc).isoformat()
+    supabase().from_("clause_flags").update({
+        "status": "in_review",
+        "submitted_by": None,
+        "submitted_at": None,
+        "updated_at": now,
+    }).eq("id", flag_id).execute()
+    _flag_system_comment(flag_id, "↩️ Recalled from the Board." + (f" Reason: {reason}" if reason else ""))
+    log_audit_event(action="flag_recalled", clause_id=flag.get("clause_id"),
+                    notes=f"flag_id={flag_id}; {reason[:120]}")
+    flash("Recalled. The flag is back with the committee.", "success")
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+
+@app.post("/admin/flags/<flag_id>/decide")
+@role_required("board")
+def decide_flag(flag_id: str):
+    """The Board approves, rejects (reason required) or defers a submitted flag."""
+    flag = _fetch_flag(flag_id)
+    if not flag:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_board"))
+    if flag.get("status") != "awaiting_board":
+        flash("Only a flag awaiting the Board can be decided.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    decision = request.form.get("decision", "").strip()
+    notes = request.form.get("decision_notes", "").strip()
+    if decision not in FLAG_DECISIONS:
+        flash("Invalid decision.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    if decision == "rejected" and not notes:
+        flash("A reason is required to reject a proposal.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#decision")
+    now = datetime.now(timezone.utc).isoformat()
+    new_status = FLAG_DECISIONS[decision]
+    supabase().from_("clause_flags").update({
+        "status": new_status,
+        "closed_by": session.get("username"),
+        "resolution_notes": notes or None,
+        "decided_at": now,
+        "updated_at": now,
+    }).eq("id", flag_id).execute()
+    label = FLAG_STATUS_LABELS[new_status]
+    icon = {"approved": "✅", "rejected": "✖", "deferred": "⏸"}[decision]
+    _flag_system_comment(flag_id, f"{icon} Board decision: {label}." + (f" {notes}" if notes else ""))
+    log_audit_event(action="flag_board_decision", clause_id=flag.get("clause_id"),
+                    notes=f"flag_id={flag_id}; {decision}; {notes[:120]}")
+    flash(f"Recorded: {label}.", "success")
+    nxt = request.form.get("next", "")
+    return redirect(nxt if nxt.startswith("/admin") else url_for("admin_flag_detail", flag_id=flag_id))
+
+
+@app.post("/admin/flags/<flag_id>/reopen")
+@login_required
+def reopen_flag(flag_id: str):
+    """After a rejection or deferral, any committee member reopens the flag to
+    revise the proposal. The decision stays in the thread."""
+    flag = _fetch_flag(flag_id)
+    if not flag:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_flags"))
+    if flag.get("status") not in ("closed_no_change", "closed_deferred"):
+        flash("Only a rejected or deferred flag can be reopened.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    now = datetime.now(timezone.utc).isoformat()
+    supabase().from_("clause_flags").update({
+        "status": "in_review",
+        "submitted_by": None,
+        "submitted_at": None,
+        "updated_at": now,
+    }).eq("id", flag_id).execute()
+    _flag_system_comment(flag_id, "🔄 Reopened for revision.")
+    log_audit_event(action="flag_reopened", clause_id=flag.get("clause_id"), notes=f"flag_id={flag_id}")
+    flash("Reopened. Revise the proposal and resubmit when ready.", "success")
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
+
+
+@app.get("/admin/board")
+@role_required("board")
+def admin_board():
+    """Board Decisions: every flag the committee has submitted, with its
+    proposal, waiting for approve / reject / defer. Board-and-up."""
+    view = request.args.get("view", "queue").strip()
+    query = supabase().from_("clause_flags").select("*", count="exact")
+    if view == "history":
+        query = query.in_("status", FLAG_DECIDED_STATUSES).order("decided_at", desc=True)
+    else:
+        view = "queue"
+        query = query.eq("status", "awaiting_board").order("submitted_at", desc=False)
+    result = query.limit(100).execute()
+    flags = result.data or []
+    for f in flags:
+        f["clause"] = None
+        if f.get("flag_type") == "clause" and f.get("clause_id"):
+            try:
+                rows = (
+                    supabase().from_("clauses").select("clause_id,citation,document,page,link")
+                    .eq("clause_id", f["clause_id"]).limit(1).execute()
+                ).data or []
+                f["clause"] = rows[0] if rows else None
+            except Exception:
+                pass
+    return render_template("admin_board.html", flags=flags, view=view, total_count=result.count or 0)
 
 
 @app.post("/admin/flags")
@@ -2474,25 +2715,22 @@ def update_flag_status(flag_id: str):
     new_status = request.form.get("status", "").strip()
     resolution_notes = request.form.get("resolution_notes", "").strip()
 
-    valid_statuses = ["open", "in_review", "closed_no_change", "closed_changed", "closed_deferred"]
+    # Board decisions are recorded through /decide (Board Decisions page);
+    # submission/recall through /submit and /recall. This route only moves a
+    # flag between the committee's own states.
+    valid_statuses = ["open", "in_review"]
     if new_status not in valid_statuses:
-        flash("Invalid status.", "error")
+        flash("Use the proposal panel to submit to the Board, and the Board Decisions page to decide.", "error")
         return redirect(url_for("admin_flag_detail", flag_id=flag_id))
-
-    closing_statuses = {"closed_no_change", "closed_changed", "closed_deferred"}
-    username = session.get("username")
-    can_close = _role_rank(_current_role()) >= ROLE_RANK["board"]
-    if new_status in closing_statuses and not can_close:
-        flash("You do not have permission to close flags.", "error")
+    flag = _fetch_flag(flag_id)
+    if not flag or flag.get("status") not in ("open", "in_review"):
+        flash("This flag is no longer with the committee.", "error")
         return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
     update_payload = {
         "status": new_status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    if new_status in closing_statuses:
-        update_payload["closed_by"] = session.get("username")
-        update_payload["resolution_notes"] = resolution_notes or None
 
     supabase().from_("clause_flags").update(update_payload).eq("id", flag_id).execute()
 
@@ -2501,7 +2739,7 @@ def update_flag_status(flag_id: str):
         notes=f"flag_id={flag_id}; new_status={new_status}",
     )
 
-    flash(f"Flag status updated to {new_status.replace('_', ' ')}.", "success")
+    flash(f"Flag status updated to {FLAG_STATUS_LABELS.get(new_status, new_status)}.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
 

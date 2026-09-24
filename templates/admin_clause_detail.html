@@ -5,6 +5,11 @@
   <span class="topbar-title">{{ clause.clause_id or clause.id }}</span>
   <span class="topbar-sub">{{ clause.citation or 'no citation' }}</span>
   <div class="topbar-spacer"></div>
+  {% if clause.clause_id and flags and flags|selectattr('status', 'in', ['open','in_review','awaiting_board'])|list %}
+    <a href="#flags" class="btn-flag-active">🚩 Flagged — see below</a>
+  {% elif clause.clause_id %}
+    <button type="button" class="btn-flag" data-clause-id="{{ clause.clause_id }}" data-citation="{{ clause.citation or clause.clause_id }}" onclick="openFlagModal(this)">🏳 Flag for revision</button>
+  {% endif %}
   <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
 </div>
 {% endblock %}
@@ -167,7 +172,7 @@
   {% endif %}
 
   {# ── Flags ── #}
-  <div class="panel">
+  <div class="panel" id="flags">
     <h2>Revision Flags</h2>
     {% if flags %}
     <table class="cd-table">
@@ -178,11 +183,10 @@
           <td class="mono">{{ (f.created_at or '')[:16].replace('T',' ') }}</td>
           <td>{{ f.flag_type }}</td>
           <td>
-            {% if f.status == 'open' %}<span class="pill stale">open</span>
-            {% elif f.status == 'in_review' %}<span class="pill stale">in review</span>
-            {% else %}<span class="pill ok">{{ f.status.replace('_',' ') }}</span>{% endif %}
+            {% if f.status in ['open', 'in_review', 'awaiting_board'] %}<span class="pill stale">{{ flag_status_labels.get(f.status, f.status) }}</span>
+            {% else %}<span class="pill ok">{{ flag_status_labels.get(f.status, f.status) }}</span>{% endif %}
           </td>
-          <td style="font-size:12px;max-width:300px;word-break:break-word;">{{ f.reason or f.question or '—' }}</td>
+          <td style="font-size:12px;max-width:300px;word-break:break-word;">{{ (f.flag_notes or f.question_text or '—')[:160] }}</td>
           <td><a href="{{ url_for('admin_flag_detail', flag_id=f.id) }}" style="font-size:12px;">open flag →</a></td>
         </tr>
         {% endfor %}
@@ -217,4 +221,51 @@
   {% endif %}
 
 </div>
+
+{# Flag modal (same as the Clauses page) #}
+<div id="flagModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:500; align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border-radius:var(--radius-lg); padding:24px; width:480px; max-width:92vw; box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <h2 style="margin:0 0 4px; font-size:15px;">Flag for Revision</h2>
+    <p id="flagModalSubtitle" class="muted" style="margin:0 0 16px; font-size:12px;"></p>
+    <input type="hidden" id="flagModalClauseId">
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Notes <span class="req">*</span></label>
+      <textarea id="flagModalNotes" rows="4" style="width:100%; resize:vertical;" placeholder="Describe what you think should be revised or reconsidered..."></textarea>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button type="button" class="secondary" style="width:auto;" onclick="closeFlagModal()">Cancel</button>
+      <button type="button" id="flagModalSubmit" style="width:auto;" onclick="submitFlagModal()">Submit Flag</button>
+    </div>
+    <div id="flagModalFeedback" style="margin-top:10px; font-size:12px; min-height:1.2em;"></div>
+  </div>
+</div>
+<script>
+function openFlagModal(btn) {
+  document.getElementById('flagModalClauseId').value = btn.getAttribute('data-clause-id');
+  document.getElementById('flagModalSubtitle').textContent = btn.getAttribute('data-citation');
+  document.getElementById('flagModalNotes').value = '';
+  document.getElementById('flagModalFeedback').textContent = '';
+  document.getElementById('flagModal').style.display = 'flex';
+  setTimeout(function() { document.getElementById('flagModalNotes').focus(); }, 50);
+}
+function closeFlagModal() { document.getElementById('flagModal').style.display = 'none'; }
+document.getElementById('flagModal').addEventListener('click', function(e) { if (e.target === this) closeFlagModal(); });
+function submitFlagModal() {
+  var clauseId = document.getElementById('flagModalClauseId').value;
+  var notes = document.getElementById('flagModalNotes').value.trim();
+  var feedback = document.getElementById('flagModalFeedback');
+  var btn = document.getElementById('flagModalSubmit');
+  if (!notes) { feedback.textContent = 'Notes are required.'; feedback.style.color = 'var(--danger)'; return; }
+  btn.disabled = true; btn.textContent = 'Submitting\u2026'; feedback.textContent = '';
+  var fd = new FormData(); fd.append('flag_type', 'clause'); fd.append('clause_id', clauseId); fd.append('flag_notes', notes);
+  fetch('/admin/flags', { method: 'POST', body: fd })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false; btn.textContent = 'Submit Flag';
+      if (data.ok) { feedback.textContent = '\u2713 Flagged — opening the flag\u2026'; feedback.style.color = 'var(--accent)'; setTimeout(function(){ window.location = '/admin/flags/' + data.flag_id + '#proposal'; }, 700); }
+      else { feedback.textContent = data.message || 'Failed to flag.'; feedback.style.color = 'var(--danger)'; }
+    })
+    .catch(function() { btn.disabled = false; btn.textContent = 'Submit Flag'; feedback.textContent = 'Request failed.'; feedback.style.color = 'var(--danger)'; });
+}
+</script>
 {% endblock %}

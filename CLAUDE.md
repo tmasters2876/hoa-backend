@@ -158,7 +158,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 - `pending_changes` — two-person approval workflow; fields: `clause_id`, `submitted_by`, `action` ('edit'|'add'|'delete'), `proposed_changes` (jsonb), `original_values` (jsonb), `status`, `reviewed_by`
 - `clause_audit_log` — append-only, every clause action recorded, no deletes ever
 - `user_activity_log` — login/logout/action tracking with real IPs
-- `clause_flags` — CCR revision flags; `flag_type` (clause|topic), `cited_clause_ids` (text[]), status lifecycle (open → in_review → closed)
+- `clause_flags` — CCR revision flags; `flag_type` (clause|topic), `cited_clause_ids` (text[]); lifecycle `open → in_review → awaiting_board → closed_changed | closed_no_change | closed_deferred` (labels: Open, In Discussion, Awaiting Board, Board Approved, Board Rejected, Deferred — `FLAG_STATUS_LABELS`); proposal columns `proposal_current/text/source/updated_by/updated_at`, `submitted_by/at`, `decided_at` (sql/003_board_review.sql). Any member saves/submits/recalls/reopens; board+ decides via `/admin/flags/<id>/decide` or `/admin/board`. Every lifecycle event is also an append-only system comment in the thread.
 - `clause_flag_comments` — threaded append-only comments on flags
 - RPC `match_clauses` — vector similarity search (used by embedding regeneration in admin; not used by answer pipeline)
 
@@ -171,7 +171,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 The tool has exactly two missions: **Revision** (support the Document Revision Committee in reviewing the current governing documents and building the new ones) and **Accuracy** (keep the clause database accurate, because it powers the front-end HOA search tool the community uses).
 
 1. **`member` — the Document Revision Committee.** Community volunteers + a board member + an ARC member revising the governing documents. They review current clauses, flag and discuss what should change, and propose revised language in the flag thread (workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md)). **They revise the documents, never the database** (owner amendment, Sept 2026): no edit forms, Add/Delete Clause, My Submissions, pending/decided changes, change history, embeddings, source verification or Search Test — routes are gated with `db_change_required` (board+) and template surfaces with `can_edit_db`. They can never approve anything and never see accuracy tooling.
-2. **`board` — the accuracy reviewer.** Reviews the tool itself for accuracy: Resident Questions, flagging/correcting database inaccuracies, closing flags, decision history. Includes everything member can do.
+2. **`board` — the accuracy reviewer and the Board's decision seat.** Records the Board's decision on each committee proposal from the Board Decisions page (`/admin/board`; approve → community vote, reject with required reason, defer — Sept 2026). Also reviews the tool itself for accuracy: Resident Questions, flagging/correcting database inaccuracies, closing flags, decision history. Includes everything member can do.
 3. **`superuser` — final approval authority.** No clause change reaches residents without a superuser approving it; deletions require a *second* superuser. Self-approval of edits is a warned, audited, break-glass exception — never the norm. Also: user/role/tag management, imports/exports, audit log.
 
 **The Final Approval clause (amended Sept 2026):** in ALL member-facing language (MEMBER_WORKFLOW.md / the in-console Guide, the Help panel as non-superusers see it, My Submissions, any future member surface) the approval step is described in **governance terms only**: the committee proposes, the **HOA Board approves or rejects**, and a Board-approved proposal is **advanced to the community for the final vote**; rejections record the reason so the member can revise and resubmit. Canonical sequence: *Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote*. Never expose the tool's internal mechanics — which console role applies a change, how many approvers, reviewer identities on decided items, or superuser/board tooling. (Until Sept 2026 the clause allowed only the bare phrase "final approval"; the owner amended it so the Guide can name the Board and the community vote.)
@@ -299,6 +299,7 @@ Then: `rm /tmp/gen_hash.py`
 | Mixed-case tag audit | UI task now | `/admin/tags` (superuser) lists tags with mixed-case badges; rename to UPPERCASE from the page — no SQL needed |
 | UTC timestamp cleanup | Pending | Remove broken central_time filter; display clean UTC with label |
 | Help panel update | Done (July 2026) | **Standing rule: the Help & Reference panel in admin_index.html is a core part of the console — update it with every user-visible change** |
+| sql/003_board_review.sql | **Run in prod Supabase BEFORE merging member-view** | adds awaiting_board status + proposal/submission/decision columns; already applied in the DEV stack |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
 | MFA/TOTP | On hold | Use pyotp + qrcode; make optional not mandatory |
 

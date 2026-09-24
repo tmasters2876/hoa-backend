@@ -1,0 +1,108 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Board Decisions</span>
+  <span class="topbar-sub">{% if view == 'history' %}decided proposals{% else %}{{ total_count }} proposal{{ 's' if total_count != 1 else '' }} awaiting the Board{% endif %}</span>
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_flags') }}" style="font-size:12px;font-weight:500;">All revision flags →</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .bd-card { display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:18px; align-items:start; }
+  @media (max-width: 900px) { .bd-card { grid-template-columns: 1fr; } }
+  .bd-head { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+  .bd-meta { font-size:12px; color:var(--muted); }
+  .bd-cols { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:10px; }
+  @media (max-width: 700px) { .bd-cols { grid-template-columns: 1fr; } }
+  .bd-col-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:5px; }
+  .bd-text { font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; border:1px solid var(--border); border-radius:var(--radius-md); padding:10px 12px; background:var(--surface-2); max-height:260px; overflow-y:auto; }
+  .bd-text.proposed { background:var(--accent-light); border-color:rgba(15,110,86,0.25); }
+  .bd-source { font-size:12px; color:var(--muted); margin-top:8px; }
+  .bd-decide { background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px; }
+  .bd-decide h3 { margin:0 0 10px; font-size:13px; }
+  .bd-decide textarea { min-height:70px; font-size:12.5px; }
+  .bd-decide .button-row { margin-top:10px; gap:6px; }
+  .bd-decide .button-row button { flex:1 1 auto; font-size:12px; padding:7px 10px; }
+  .status-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .status-pill.closed_changed { background:var(--accent-light); color:var(--accent); }
+  .status-pill.closed_no_change { background:var(--danger-light); color:var(--danger); }
+  .status-pill.closed_deferred { background:var(--surface-2); color:var(--muted); border:1px solid var(--border); }
+  .tabs { display:flex; gap:0; border-bottom:1px solid var(--border); }
+  .tabs a { padding:10px 18px; font-size:13px; font-weight:600; text-decoration:none; border-bottom:2px solid transparent; }
+  .tabs a.active { border-bottom-color:var(--accent); }
+</style>
+
+<div class="stack">
+
+  <div class="panel" style="padding-bottom:0;">
+    <div class="tabs">
+      <a href="{{ url_for('admin_board') }}" class="{% if view != 'history' %}active{% endif %}">Queue{% if board_queue_count %} ({{ board_queue_count }}){% endif %}</a>
+      <a href="{{ url_for('admin_board', view='history') }}" class="{% if view == 'history' %}active{% endif %}">Decided</a>
+    </div>
+  </div>
+
+  {% if view != 'history' %}
+  <p class="muted" style="margin:0;">Each item is a proposal the committee agreed on and submitted. Approve advances it to the community vote; Reject requires a reason and sends it back to the committee; Defer parks it. The decision and reason are recorded on the flag for the committee to see.</p>
+  {% endif %}
+
+  {% for f in flags %}
+  <div class="panel">
+    <div class="bd-card">
+      <div>
+        <div class="bd-head">
+          {% if f.flag_type == 'clause' %}
+            <a class="clause-id-badge" href="{{ url_for('clause_detail', key=f.clause_id) }}">{{ f.clause_id }}</a>
+            {% if f.clause %}<span class="bd-meta">{{ f.clause.citation or '' }}{% if f.clause.document %} — {{ f.clause.document }}{% endif %}{% if f.clause.page %}, p.{{ f.clause.page }}{% endif %}</span>{% endif %}
+          {% else %}
+            <span class="badge delete" style="text-transform:none;">Topic</span>
+            <span class="bd-meta">{{ (f.question_text or '')[:120] }}</span>
+          {% endif %}
+          {% if view == 'history' %}
+            <span class="status-pill {{ f.status }}">{{ flag_status_labels.get(f.status, f.status) }}</span>
+          {% endif %}
+        </div>
+        <div class="bd-meta">
+          Flagged by <strong>{{ f.flagged_by }}</strong> · submitted by <strong>{{ f.submitted_by or '—' }}</strong>{% if f.submitted_at %} on {{ f.submitted_at[:16].replace('T',' ') }} UTC{% endif %}
+          · <a href="{{ url_for('admin_flag_detail', flag_id=f.id) }}">open the flag &amp; thread →</a>
+        </div>
+        {% if f.flag_notes %}<p style="font-size:13px; margin:8px 0 0;"><span class="muted">Why it was flagged:</span> {{ f.flag_notes }}</p>{% endif %}
+        <div class="bd-cols">
+          <div>
+            <div class="bd-col-label">Current language</div>
+            <div class="bd-text">{{ f.proposal_current or '—' }}</div>
+          </div>
+          <div>
+            <div class="bd-col-label">Proposed language</div>
+            <div class="bd-text proposed">{{ f.proposal_text or '—' }}</div>
+          </div>
+        </div>
+        {% if f.proposal_source %}<div class="bd-source"><strong>Source of the language:</strong> {{ f.proposal_source }}</div>{% endif %}
+        {% if view == 'history' and f.resolution_notes %}
+          <div class="bd-source"><strong>Board reason:</strong> {{ f.resolution_notes }}{% if f.decided_at %} <span class="muted">({{ f.decided_at[:10] }}{% if f.closed_by %}, {{ f.closed_by }}{% endif %})</span>{% endif %}</div>
+        {% endif %}
+      </div>
+
+      {% if view != 'history' %}
+      <form method="post" action="{{ url_for('decide_flag', flag_id=f.id) }}" class="bd-decide">
+        <input type="hidden" name="next" value="{{ url_for('admin_board') }}">
+        <h3>Board decision</h3>
+        <label for="dn-{{ f.id }}">Reason <span class="muted" style="font-weight:400;">(required to reject)</span></label>
+        <textarea id="dn-{{ f.id }}" name="decision_notes" placeholder="Recorded on the flag for the committee…"></textarea>
+        <div class="button-row">
+          <button type="submit" name="decision" value="approved" onclick="return confirm('Approve this proposal and advance it to the community vote?');">✅ Approve</button>
+          <button type="submit" name="decision" value="rejected" class="danger" onclick="var t=this.form.decision_notes.value.trim(); if(!t){alert('A reason is required to reject.'); return false;} return confirm('Reject this proposal? The reason will be shown to the committee.');">✖ Reject</button>
+          <button type="submit" name="decision" value="deferred" class="secondary" onclick="return confirm('Defer this proposal?');">⏸ Defer</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="panel"><p class="muted">{% if view == 'history' %}No decisions recorded yet.{% else %}Nothing awaiting the Board — the queue is clear.{% endif %}</p></div>
+  {% endfor %}
+
+</div>
+{% endblock %}

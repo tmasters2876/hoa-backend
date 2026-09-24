@@ -4,7 +4,7 @@
 <div class="topbar">
   <span class="topbar-title">Revision Flags</span>
   {% if total_count is defined %}
-  <span class="topbar-sub">{{ total_count }} flag{{ 's' if total_count != 1 else '' }}</span>
+  <span class="topbar-sub">{{ total_count }} flag{{ 's' if total_count != 1 else '' }}{% if status_filter == 'active' %} active{% endif %}</span>
   {% endif %}
   <div class="topbar-spacer"></div>
   <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
@@ -16,17 +16,22 @@
   <div class="stat-tile {% if status_counts.get('open', 0) > 0 %}warn{% endif %}">
     <div class="stat-label">Open</div>
     <div class="stat-num">{{ status_counts.get('open', 0) }}</div>
-    <div class="stat-sub">needs attention</div>
+    <div class="stat-sub">flagged, no proposal yet</div>
   </div>
   <div class="stat-tile">
-    <div class="stat-label">In Review</div>
+    <div class="stat-label">In Discussion</div>
     <div class="stat-num">{{ status_counts.get('in_review', 0) }}</div>
-    <div class="stat-sub">being evaluated</div>
+    <div class="stat-sub">proposal being worked out</div>
+  </div>
+  <div class="stat-tile {% if status_counts.get('awaiting_board', 0) > 0 %}warn{% endif %}">
+    <div class="stat-label">Awaiting Board</div>
+    <div class="stat-num">{{ status_counts.get('awaiting_board', 0) }}</div>
+    <div class="stat-sub">submitted for approval</div>
   </div>
   <div class="stat-tile ok">
-    <div class="stat-label">Closed</div>
+    <div class="stat-label">Decided</div>
     <div class="stat-num">{{ (status_counts.get('closed_no_change', 0) + status_counts.get('closed_changed', 0) + status_counts.get('closed_deferred', 0)) }}</div>
-    <div class="stat-sub">resolved (all time)</div>
+    <div class="stat-sub">{{ status_counts.get('closed_changed', 0) }} approved · {{ status_counts.get('closed_no_change', 0) }} rejected · {{ status_counts.get('closed_deferred', 0) }} deferred</div>
   </div>
 </div>
 {% endblock %}
@@ -70,8 +75,9 @@
   }
   .flag-status-badge.open        { background: var(--accent-2-light); color: #7a5200; }
   .flag-status-badge.in_review   { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
-  .flag-status-badge.closed_no_change,
-  .flag-status-badge.closed_changed,
+  .flag-status-badge.awaiting_board { background: #eef4fb; color: #1f4e79; border: 1px solid #9fbbe0; }
+  .flag-status-badge.closed_changed { background: var(--accent-light); color: var(--accent); }
+  .flag-status-badge.closed_no_change { background: var(--danger-light); color: var(--danger); }
   .flag-status-badge.closed_deferred { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
   .flag-type-badge {
     display: inline-block;
@@ -109,12 +115,15 @@
       <div class="field">
         <label for="f-status">Status</label>
         <select id="f-status" name="status">
+          <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active (not yet decided)</option>
           <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All statuses</option>
           <option value="open" {% if status_filter == 'open' %}selected{% endif %}>Open</option>
-          <option value="in_review" {% if status_filter == 'in_review' %}selected{% endif %}>In Review</option>
-          <option value="closed_no_change" {% if status_filter == 'closed_no_change' %}selected{% endif %}>Closed — No Change</option>
-          <option value="closed_changed" {% if status_filter == 'closed_changed' %}selected{% endif %}>Closed — Changed</option>
-          <option value="closed_deferred" {% if status_filter == 'closed_deferred' %}selected{% endif %}>Closed — Deferred</option>
+          <option value="in_review" {% if status_filter == 'in_review' %}selected{% endif %}>In Discussion</option>
+          <option value="awaiting_board" {% if status_filter == 'awaiting_board' %}selected{% endif %}>Awaiting Board</option>
+          <option value="decided" {% if status_filter == 'decided' %}selected{% endif %}>Decided (all)</option>
+          <option value="closed_changed" {% if status_filter == 'closed_changed' %}selected{% endif %}>Board Approved</option>
+          <option value="closed_no_change" {% if status_filter == 'closed_no_change' %}selected{% endif %}>Board Rejected</option>
+          <option value="closed_deferred" {% if status_filter == 'closed_deferred' %}selected{% endif %}>Deferred</option>
         </select>
       </div>
       <div class="field">
@@ -126,7 +135,7 @@
         </select>
       </div>
       <button type="submit">Filter</button>
-      {% if status_filter and status_filter != 'open' or flag_type_filter %}
+      {% if status_filter and status_filter != 'active' or flag_type_filter %}
       <a href="{{ url_for('admin_flags') }}" style="align-self:flex-end; font-size:0.88rem; padding-bottom:9px;">Reset</a>
       {% endif %}
     </form>
@@ -146,8 +155,9 @@
             <th>Type</th>
             <th>Reference</th>
             <th>Notes</th>
+            <th>Proposal</th>
             <th>Flagged By</th>
-            <th>Date</th>
+            <th>Updated</th>
             <th>Comments</th>
             <th>Status</th>
             <th>View</th>
@@ -169,8 +179,9 @@
             <td style="font-size:12px; max-width:240px; word-break:break-word;">
               {{ (flag.flag_notes or '')[:120] }}{% if flag.flag_notes and flag.flag_notes|length > 120 %}…{% endif %}
             </td>
+            <td style="text-align:center;">{% if flag.proposal_text %}<span title="Proposal recorded">📝</span>{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="mono">{{ flag.flagged_by or '—' }}</td>
-            <td class="mono">{{ flag.created_at[:10] if flag.created_at else '—' }}</td>
+            <td class="mono">{{ (flag.updated_at or flag.created_at or '')[:10] or '—' }}</td>
             <td style="text-align:center;">
               {% if flag.comment_count > 0 %}
                 <span style="font-size:12px; font-weight:600; color:var(--accent);">{{ flag.comment_count }}</span>
@@ -179,7 +190,7 @@
               {% endif %}
             </td>
             <td>
-              <span class="flag-status-badge {{ flag.status }}">{{ flag.status | replace('_', ' ') }}</span>
+              <span class="flag-status-badge {{ flag.status }}">{{ flag_status_labels.get(flag.status, flag.status) }}</span>
             </td>
             <td>
               <a href="{{ url_for('admin_flag_detail', flag_id=flag.id) }}"

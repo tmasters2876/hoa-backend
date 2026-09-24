@@ -13,7 +13,7 @@ flowchart TD
     subgraph COMMITTEE["👤 Committee — reviews, discusses, proposes"]
         A["🔍 Review a clause"] --> C["🏳 Flag items that need<br/>committee discussion"]
         C --> D["💬 Discuss in the<br/>flag thread"]
-        D --> E["✏️ Propose the revised language<br/><b>in the flag thread</b>"]
+        D --> E["✏️ Record the proposal on the flag<br/><b>Submit to the Board</b>"]
     end
 
     subgraph BOARD["🏛 HOA Board — approves or rejects"]
@@ -39,7 +39,7 @@ flowchart TD
 
 **Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote**
 
-You handle the review, discussion, and proposal process inside the committee workflow, and all of it happens in revision flags. Final Board approval happens after the committee's proposal is submitted: the Board reviews the proposal and either approves or rejects it. If approved by the Board, the proposal is advanced to the community for final voting. If rejected, the reason is recorded on the flag so the proposal can be revised and resubmitted — a rejection is never a dead end, and the flag thread is where you regroup.
+You handle the review, discussion, and proposal process inside the committee workflow, and all of it happens on revision flags. Final Board approval happens after the committee's proposal is submitted: the Board reviews the proposal and either approves or rejects it. If approved by the Board, the proposal is advanced to the community for final voting. If rejected, the reason is recorded on the flag so the proposal can be revised and resubmitted — a rejection is never a dead end, and the flag thread is where you regroup. Submitted by mistake? Any member can recall a proposal until the Board decides.
 
 ---
 
@@ -80,29 +80,34 @@ Flags are the committee's deliberation tool. A flag never changes any clause —
 
 ---
 
-## Step 3 — Propose the revised language
+## Step 3 — Record the proposal and submit it to the Board
 
-When the committee's direction is clear, put the proposal on the record — **in the flag thread**:
+When the committee's direction is clear, put the proposal on the flag — the **Committee proposal** panel on the flag page:
 
-1. Post a comment on the flag that states the proposed new wording (or "delete this clause", or "move this rule to the Builders Guidelines"). Quote the current text you are replacing.
-2. Say where the language comes from — another document, a model covenant, state law — or say plainly that it is new drafting.
-3. If the committee agrees, the flag moves to **In Review**; that is the signal that the proposal is ready for the Board. If it does not, keep discussing — the thread is the record either way.
+1. **Current language** — the clause text being replaced (prefilled from the clause; leave blank for a brand-new provision).
+2. **Proposed language** — the new wording, or "Delete this clause", or "Move this rule to the Builders Guidelines".
+3. **Where the language comes from** — another document, a model covenant, state law — or say plainly that it is new drafting.
+4. **Save proposal.** Any committee member can edit it until it is submitted; the flag shows who last edited it and when.
+5. When the committee agrees, any member clicks **📨 Submit to the Board**. The proposal locks, the flag becomes **Awaiting Board**, and a note goes into the thread.
 
-You never edit a clause in this tool, and there is nothing to "submit" outside the flag. That is deliberate: the committee is rewriting the governing documents, and the database is updated later to match the documents the community ratifies.
+**Submitted by mistake, or the committee changed its mind?** Any member can **↩️ Recall from Board** until the Board decides. The recall (and your reason) is recorded in the thread, the proposal unlocks, and you carry on.
+
+You never edit a clause in this tool, and nothing is "submitted" anywhere except on the flag. That is deliberate: the committee is rewriting the governing documents, and the database is updated later to match the documents the community ratifies.
 
 ---
 
 ## Step 4 — Track the flag
 
-The **Revision Flags** page (sidebar) is the committee's ledger. Every flag shows its status:
+The **Revision Flags** page (sidebar) is the committee's ledger. It opens on active flags, most recently updated first; filter by status to see decided ones. Every flag shows its status:
 
-- **Open** — being discussed.
-- **In Review** — the committee's proposal is ready for the Board.
-- **Closed — Changed** — the Board approved the proposal; it goes to the community vote.
-- **Closed — No Change** — the Board rejected it. The reason is recorded on the flag. Read it, revise the proposal in the thread, and it can be raised again.
-- **Closed — Deferred** — parked for a later round.
+- **Open** — flagged, no proposal yet.
+- **In Discussion** — a proposal is being worked out.
+- **Awaiting Board** — submitted; locked until the Board decides (recallable).
+- **Board Approved** — advanced to the community vote.
+- **Board Rejected** — the Board's reason is shown on the flag. Any member can **Reopen for revision**, revise the proposal, and resubmit; the earlier decision stays in the thread.
+- **Deferred** — parked for a later round; can also be reopened.
 
-Filter by status or type, and open any flag to read its full thread and resolution notes.
+Each flag page shows the lifecycle strip at the top — Flagged → Committee proposal → Awaiting Board → Board decision → Community vote — so you always know where it stands.
 
 ---
 
@@ -121,5 +126,5 @@ Filter by status or type, and open any flag to read its full thread and resoluti
 
 - **One concern per flag.** Ten small flags beat one sprawling one — they can be closed individually.
 - **Quote the source.** Clause text is verbatim from recorded documents; proposals should cite where the new language comes from or say plainly that it's new drafting.
-- **Argue in the thread.** If a proposal is rejected and you disagree, make the case in the flag thread — that is the record the Board reads.
+- **Argue in the thread, propose in the panel.** Discussion belongs in comments; the proposal itself lives in the proposal panel so the Board reads one clean thing. If a proposal is rejected and you disagree, make the case in the thread, revise, and resubmit.
 - **Everything is audited.** Every action is permanently recorded with your name and a timestamp. Work as if the whole community is reading — because ultimately, they are the ones these documents govern.

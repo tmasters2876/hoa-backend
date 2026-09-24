@@ -23,8 +23,8 @@ Three roles, three purposes:
 ### `member` — the Document Revision Committee
 Community volunteers, plus a board member and an ARC member, revising the governing documents. Members **review** the current clauses (which constitute the actual governing documents), **flag and discuss** what should change, and **propose** revised language in the flag thread. Their work product is the new governing documents. **Members revise the documents, never the database** (amended by the owner, Sept 2026): they never see edit forms, Add/Delete Clause, My Submissions, pending or decided changes, change history, embeddings, source verification, or the Search Test — the database is updated to match the ratified documents afterward, by board-and-up. Members can never approve anything and never see accuracy tooling. Workflow: [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md).
 
-### `board` — the accuracy reviewer
-Reviews the *tool itself* for accuracy: watches what residents actually ask (Resident Questions), flags and corrects inaccuracies in the clause database that powers the front-end search tool, closes revision flags, and reads the decision history. Includes everything `member` can do.
+### `board` — the accuracy reviewer and the Board's decision seat
+Records the Board's decision on every committee proposal — Board Approved (→ community vote), Board Rejected (reason required, shown to the committee), or Deferred — from the **Board Decisions** page (added Sept 2026). Also reviews the *tool itself* for accuracy: watches what residents actually ask (Resident Questions), flags and corrects inaccuracies in the clause database that powers the front-end search tool, closes revision flags, and reads the decision history. Includes everything `member` can do.
 
 ### `superuser` — final approval authority
 Superusers are the final accuracy check on everything: **no clause change reaches residents without a superuser approving it**, and deletions require a *second* superuser. They also run user/role management, tag management, imports/exports, and the audit log. Self-approval of edits exists as a warned, audited, break-glass exception — it is never the norm.

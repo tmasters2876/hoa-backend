@@ -3,7 +3,7 @@
 {% block topbar %}
 <div class="topbar">
   <span class="topbar-title">Revision Flag</span>
-  <span class="topbar-sub">{{ flag.flag_type | capitalize }} flag &bull; {{ flag.status | replace('_', ' ') }}</span>
+  <span class="topbar-sub">{{ flag.flag_type | capitalize }} flag &bull; {{ flag_status_labels.get(flag.status, flag.status) }}</span>
   <div class="topbar-spacer"></div>
   <a href="{{ url_for('admin_flags') }}" style="font-size:12px;font-weight:500;">← Back to Flags</a>
 </div>
@@ -21,9 +21,26 @@
   }
   .flag-status-badge.open        { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
   .flag-status-badge.in_review   { background: var(--accent-2-light); color: #7a5200; border: 1px solid var(--accent-2-border); }
-  .flag-status-badge.closed_no_change,
-  .flag-status-badge.closed_changed,
+  .flag-status-badge.awaiting_board { background: #eef4fb; color: #1f4e79; border: 1px solid #9fbbe0; }
+  .flag-status-badge.closed_changed { background: var(--accent-light); color: var(--accent); border: 1px solid rgba(15,110,86,0.25); }
+  .flag-status-badge.closed_no_change { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); }
   .flag-status-badge.closed_deferred { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+
+  .lifecycle { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:11px; color:var(--muted); margin-bottom:14px; }
+  .lifecycle .step { padding:3px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); }
+  .lifecycle .step.done { background:var(--accent-light); color:var(--accent); border-color:rgba(15,110,86,0.25); }
+  .lifecycle .step.now { background:#eef4fb; color:#1f4e79; border-color:#9fbbe0; font-weight:600; }
+  .lifecycle .arrow { opacity:0.5; }
+  .prop-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:700px) { .prop-cols { grid-template-columns:1fr; } }
+  .prop-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:5px; }
+  .prop-text { font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; border:1px solid var(--border); border-radius:var(--radius-md); padding:10px 12px; background:var(--surface-2); }
+  .prop-text.proposed { background:var(--accent-light); border-color:rgba(15,110,86,0.25); }
+  .prop-cols textarea { min-height:150px; font-size:12.5px; }
+  .decision-box { border-radius:var(--radius-md); padding:12px 14px; font-size:13px; line-height:1.55; }
+  .decision-box.closed_changed { background:var(--accent-light); border:1px solid rgba(15,110,86,0.25); color:#0a4e3b; }
+  .decision-box.closed_no_change { background:var(--danger-light); border:1px solid var(--danger-border); color:#7a1a1c; }
+  .decision-box.closed_deferred { background:var(--surface-2); border:1px solid var(--border); color:var(--muted); }
 
   .comment-thread { display: flex; flex-direction: column; gap: 12px; }
   .comment-item {
@@ -87,6 +104,19 @@
 </style>
 
 <div class="stack">
+
+  {# ── Lifecycle ── #}
+  {% set st = flag.status %}
+  {% set decided = st in ['closed_changed', 'closed_no_change', 'closed_deferred'] %}
+  <div class="panel" style="padding:12px 20px;">
+    <div class="lifecycle" style="margin:0;">
+      <span class="step {% if st == 'open' %}now{% else %}done{% endif %}">1 · Flagged</span><span class="arrow">→</span>
+      <span class="step {% if st == 'in_review' %}now{% elif st != 'open' %}done{% endif %}">2 · Committee proposal</span><span class="arrow">→</span>
+      <span class="step {% if st == 'awaiting_board' %}now{% elif decided %}done{% endif %}">3 · Awaiting Board</span><span class="arrow">→</span>
+      <span class="step {% if decided %}now{% endif %}">4 · {% if decided %}{{ flag_status_labels.get(st, st) }}{% else %}Board decision{% endif %}</span>
+      {% if st == 'closed_changed' %}<span class="arrow">→</span><span class="step">5 · Community vote</span>{% endif %}
+    </div>
+  </div>
 
   {# ── What was flagged ── #}
   {% if flag.flag_type == 'clause' %}
@@ -171,24 +201,126 @@
       </div>
       <div>
         <div class="clause-citation" style="margin-bottom:3px;">Status</div>
-        <span class="flag-status-badge {{ flag.status }}">{{ flag.status | replace('_', ' ') }}</span>
+        <span class="flag-status-badge {{ flag.status }}">{{ flag_status_labels.get(flag.status, flag.status) }}</span>
       </div>
       {% if flag.closed_by and (is_superuser or is_approver) %}
       <div>
-        <div class="clause-citation" style="margin-bottom:3px;">Closed By</div>
+        <div class="clause-citation" style="margin-bottom:3px;">Decided By</div>
         <div style="font-size:13px;">{{ flag.closed_by }}</div>
       </div>
       {% endif %}
     </div>
     <div class="clause-citation" style="margin-bottom:6px;">Original Notes</div>
     <div class="flag-notes-box">{{ flag.flag_notes or '—' }}</div>
-    {% if flag.resolution_notes %}
-    <div style="margin-top:12px;">
-      <div class="clause-citation" style="margin-bottom:6px;">Resolution Notes</div>
-      <div style="font-size:13px; line-height:1.55; white-space:pre-wrap; color:var(--muted);">{{ flag.resolution_notes }}</div>
+
+  </div>
+
+  {# ── Board decision (once decided) ── #}
+  {% if decided %}
+  <div class="panel" id="decision">
+    <h2 style="margin-bottom:10px; font-size:14px;">Board decision</h2>
+    <div class="decision-box {{ st }}">
+      <strong>{{ flag_status_labels.get(st, st) }}</strong>{% if flag.decided_at %} <span style="opacity:0.75;">· {{ flag.decided_at[:16].replace('T',' ') }} UTC</span>{% endif %}
+      {% if st == 'closed_changed' %}<div style="margin-top:4px;">Advanced to the community for the final vote.</div>{% endif %}
+      {% if flag.resolution_notes %}<div style="margin-top:6px;"><span style="opacity:0.75;">Reason:</span> {{ flag.resolution_notes }}</div>{% endif %}
+      {% if flag.closed_by and (is_superuser or is_approver) %}<div class="muted" style="font-size:11px; margin-top:6px;">recorded by {{ flag.closed_by }}</div>{% endif %}
     </div>
+    {% if st in ['closed_no_change', 'closed_deferred'] %}
+    <form method="post" action="{{ url_for('reopen_flag', flag_id=flag.id) }}" style="margin-top:12px;"
+          onsubmit="return confirm('Reopen this flag so the committee can revise the proposal?');">
+      <button type="submit" class="ghost green">🔄 Reopen for revision</button>
+    </form>
     {% endif %}
   </div>
+  {% endif %}
+
+  {# ── Committee proposal ── #}
+  <div class="panel" id="proposal">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+      <h2 style="margin:0; font-size:14px;">Committee proposal</h2>
+      {% if flag.proposal_updated_at %}
+      <span class="muted" style="font-size:11px;">last edited by {{ flag.proposal_updated_by }} · {{ flag.proposal_updated_at[:16].replace('T',' ') }} UTC</span>
+      {% endif %}
+    </div>
+
+    {% if proposal_editable %}
+    <p class="muted" style="font-size:12px; margin:0 0 12px;">This is what the Board will read and decide on. Put the language being replaced on the left and the committee's proposed language on the right. Any committee member can edit it until it is submitted.</p>
+    <form method="post" action="{{ url_for('save_flag_proposal', flag_id=flag.id) }}" class="stack">
+      <div class="prop-cols">
+        <div>
+          <label for="proposal_current">Current language</label>
+          <textarea id="proposal_current" name="proposal_current" placeholder="Paste the clause text being replaced (or leave blank for a new provision)">{{ flag.proposal_current if flag.proposal_current is not none else (clause.clause_text if clause else '') }}</textarea>
+        </div>
+        <div>
+          <label for="proposal_text">Proposed language <span class="req">*</span></label>
+          <textarea id="proposal_text" name="proposal_text" required placeholder="The new wording — or &quot;Delete this clause&quot; / &quot;Move this rule to the Builders Guidelines&quot;">{{ flag.proposal_text or '' }}</textarea>
+        </div>
+      </div>
+      <div>
+        <label for="proposal_source">Where the language comes from</label>
+        <input id="proposal_source" name="proposal_source" value="{{ flag.proposal_source or '' }}" placeholder="e.g. Texas Property Code §202.010; model covenant; new drafting by the committee">
+      </div>
+      <div class="button-row" style="align-items:center;">
+        <button type="submit" class="ghost green" style="flex:0 0 auto;">💾 Save proposal</button>
+        {% if flag.proposal_text %}
+        <span class="muted" style="font-size:12px;">Saved. When the committee agrees, submit it below.</span>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if flag.proposal_text %}
+    <form method="post" action="{{ url_for('submit_flag_to_board', flag_id=flag.id) }}" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);"
+          onsubmit="return confirm('Submit this proposal to the Board for approval?\n\nThe proposal locks while the Board has it. Any committee member can recall it until the Board decides.');">
+      <button type="submit" style="width:auto;">📨 Submit to the Board</button>
+      <span class="muted" style="font-size:12px; margin-left:8px;">Any committee member can submit once the committee agrees.</span>
+    </form>
+    {% endif %}
+
+    {% else %}
+    <div class="prop-cols">
+      <div>
+        <div class="prop-label">Current language</div>
+        <div class="prop-text">{{ flag.proposal_current or '—' }}</div>
+      </div>
+      <div>
+        <div class="prop-label">Proposed language</div>
+        <div class="prop-text proposed">{{ flag.proposal_text or '—' }}</div>
+      </div>
+    </div>
+    {% if flag.proposal_source %}<p class="muted" style="font-size:12px; margin:8px 0 0;"><strong>Source of the language:</strong> {{ flag.proposal_source }}</p>{% endif %}
+
+    {% if st == 'awaiting_board' %}
+    <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+      <span class="flag-status-badge awaiting_board">Awaiting Board</span>
+      <span class="muted" style="font-size:12px;">submitted by {{ flag.submitted_by }}{% if flag.submitted_at %} · {{ flag.submitted_at[:16].replace('T',' ') }} UTC{% endif %}. The proposal is locked until the Board decides.</span>
+      <form method="post" action="{{ url_for('recall_flag_from_board', flag_id=flag.id) }}" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-left:auto;"
+            onsubmit="return confirm('Recall this proposal from the Board? It returns to the committee for editing.');">
+        <input name="reason" placeholder="Reason for recall (optional)" style="width:240px; font-size:12px; padding:6px 10px;">
+        <button type="submit" class="ghost amber">↩️ Recall from Board</button>
+      </form>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  {# ── Board decision panel (board+, while awaiting) ── #}
+  {% if st == 'awaiting_board' and can_decide %}
+  <div class="panel" id="decision" style="border-color:#9fbbe0; background:#f7fafe;">
+    <h2 style="margin-bottom:6px; font-size:14px;">Board decision</h2>
+    <p class="muted" style="font-size:12px; margin:0 0 10px;">Approve advances the proposal to the community vote. Reject requires a reason and returns it to the committee. Defer parks it. All three are recorded in the thread. The <a href="{{ url_for('admin_board') }}">Board Decisions</a> page lists everything awaiting the Board.</p>
+    <form method="post" action="{{ url_for('decide_flag', flag_id=flag.id) }}" class="stack">
+      <div>
+        <label for="decision_notes">Reason <span class="muted" style="font-weight:400;">(required to reject)</span></label>
+        <textarea id="decision_notes" name="decision_notes" rows="3" placeholder="Recorded on the flag for the committee…"></textarea>
+      </div>
+      <div class="button-row">
+        <button type="submit" name="decision" value="approved" style="flex:0 0 auto;" onclick="return confirm('Approve this proposal and advance it to the community vote?');">✅ Approve</button>
+        <button type="submit" name="decision" value="rejected" class="danger" style="flex:0 0 auto;" onclick="var t=this.form.decision_notes.value.trim(); if(!t){alert('A reason is required to reject.'); return false;} return confirm('Reject this proposal? The reason will be shown to the committee.');">✖ Reject</button>
+        <button type="submit" name="decision" value="deferred" class="secondary" style="flex:0 0 auto;" onclick="return confirm('Defer this proposal?');">⏸ Defer</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
 
   {# ── Comment thread ── #}
   <div class="panel" id="comments">
@@ -221,47 +353,26 @@
     </form>
   </div>
 
-  {# ── Status management ── #}
+  {# ── Committee status (Open / In Discussion) — decisions go through the Board ── #}
+  {% if st in ['open', 'in_review'] %}
   <div class="panel">
-    <h2 style="margin-bottom:12px; font-size:14px;">Update Status</h2>
+    <h2 style="margin-bottom:12px; font-size:14px;">Committee status</h2>
     <form method="post" action="{{ url_for('update_flag_status', flag_id=flag.id) }}" class="stack">
       <div class="status-select-row">
         <div class="field">
-          <label for="flag-status-select">New Status</label>
-          <select id="flag-status-select" name="status" onchange="toggleResolutionNotes(this)">
-            <option value="open" {% if flag.status == 'open' %}selected{% endif %}>Open</option>
-            <option value="in_review" {% if flag.status == 'in_review' %}selected{% endif %}>In Review</option>
-            {% if is_superuser or is_approver %}
-            <option value="closed_no_change" {% if flag.status == 'closed_no_change' %}selected{% endif %}>Closed — No Change</option>
-            <option value="closed_changed" {% if flag.status == 'closed_changed' %}selected{% endif %}>Closed — Changed</option>
-            <option value="closed_deferred" {% if flag.status == 'closed_deferred' %}selected{% endif %}>Closed — Deferred</option>
-            {% endif %}
+          <label for="flag-status-select">Status</label>
+          <select id="flag-status-select" name="status">
+            <option value="open" {% if st == 'open' %}selected{% endif %}>Open — flagged, no proposal yet</option>
+            <option value="in_review" {% if st == 'in_review' %}selected{% endif %}>In Discussion — proposal being worked out</option>
           </select>
         </div>
-        <button type="submit">Update Status</button>
+        <button type="submit">Update</button>
       </div>
-      <div id="resolutionNotesRow" style="display:none;">
-        <label for="resolution-notes">Resolution Notes</label>
-        <textarea id="resolution-notes" name="resolution_notes" rows="3"
-                  placeholder="Describe the outcome or reason for closing…">{{ flag.resolution_notes or '' }}</textarea>
-      </div>
+      <p class="muted" style="font-size:12px; margin:0;">Submitting the proposal above moves the flag to <strong>Awaiting Board</strong>; the Board's decision closes it.</p>
     </form>
   </div>
+  {% endif %}
 
 </div>
 
-<script>
-var closingStatuses = ['closed_no_change', 'closed_changed', 'closed_deferred'];
-
-function toggleResolutionNotes(sel) {
-  var row = document.getElementById('resolutionNotesRow');
-  row.style.display = closingStatuses.indexOf(sel.value) !== -1 ? 'block' : 'none';
-}
-
-// Show on load if already a closing status
-(function() {
-  var sel = document.getElementById('flag-status-select');
-  if (sel) toggleResolutionNotes(sel);
-})();
-</script>
 {% endblock %}

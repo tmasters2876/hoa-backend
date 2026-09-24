@@ -89,7 +89,7 @@ def test_diagram_has_three_lanes_in_governance_order():
 def test_diagram_committee_lane_covers_review_flag_discuss_propose():
     d = _diagram()
     lane = d[d.index("subgraph COMMITTEE"):d.index("subgraph BOARD")]
-    for step in ("Review a clause", "Flag items", "Discuss in the", "Propose the revised language", "in the flag thread"):
+    for step in ("Review a clause", "Flag items", "Discuss in the", "Record the proposal on the flag", "Submit to the Board"):
         assert step in lane, f"committee lane missing '{step}'"
     # members never see the database edit form, so the diagram must not point at it
     assert "Submit for Approval" not in lane
@@ -155,7 +155,7 @@ def test_guide_page_renders_governance_diagram_for_members(client, mock_supabase
     diagram = m.group(1)
     for needle in ("subgraph COMMITTEE", "subgraph BOARD", "subgraph COMMUNITY",
                    "HOA Board", "Board Approved", "Staged for Community Vote",
-                   "Community Vote", "in the flag thread"):
+                   "Community Vote", "Submit to the Board"):
         assert needle in diagram, f"rendered diagram missing {needle!r}"
     assert "Live to residents" not in html
     assert "&lt;br/&gt;" not in diagram            # html un-escaped for mermaid.js
