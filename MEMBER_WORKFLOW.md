@@ -88,9 +88,13 @@ When the committee's direction is clear, put the proposal on the flag — the **
 2. **Proposed language** — the new wording, or "Delete this clause", or "Move this rule to the Builders Guidelines".
 3. **Where the language comes from** — another document, a model covenant, state law — or say plainly that it is new drafting.
 4. **Save proposal.** Any committee member can edit it until it is submitted; the flag shows who last edited it and when.
-5. When the committee agrees, any member clicks **📨 Submit to the Board**. The proposal locks, the flag becomes **Awaiting Board**, and a note goes into the thread.
+5. When the committee agrees, any member clicks **📨 Send to the Board** under **Committee actions**. The proposal is held as-is, the flag becomes **Awaiting Board**, and a note goes into the thread.
 
-**Submitted by mistake, or the committee changed its mind?** Any member can **↩️ Recall from Board** until the Board decides. The recall (and your reason) is recorded in the thread, the proposal unlocks, and you carry on.
+**Sent by mistake, or the committee changed its mind?** Any member can **↩️ Recall from Board** until the Board decides. The recall (and your reason) is recorded in the thread, the proposal opens up again, and you carry on.
+
+**What if the discussion ends with "actually, this is fine as it is"?** That happens, and it is a good outcome. Under **Committee actions**, any member can **🗂 Close — no change needed**, with a short reason that goes into the thread. The flag never goes to the Board. Closed by accident? Any member can **Reopen** it — the whole thread and proposal are still there.
+
+While the committee is still talking, there is nothing to set: a flag moves from **Open** to **In Discussion** on its own with the first comment, and it stays there until someone either sends it to the Board or closes it.
 
 You never edit a clause in this tool, and nothing is "submitted" anywhere except on the flag. That is deliberate: the committee is rewriting the governing documents, and the database is updated later to match the documents the community ratifies.
 
@@ -100,12 +104,15 @@ You never edit a clause in this tool, and nothing is "submitted" anywhere except
 
 The **Revision Flags** page (sidebar) is the committee's ledger. It opens on active flags, most recently updated first; filter by status to see decided ones. Every flag shows its status:
 
-- **Open** — flagged, no proposal yet.
-- **In Discussion** — a proposal is being worked out.
-- **Awaiting Board** — submitted; locked until the Board decides (recallable).
+- **Open** — flagged, nobody has commented yet.
+- **In Discussion** — the committee is talking (automatic with the first comment). If there is back-and-forth or more information is needed, it simply stays here.
+- **Closed by committee** — the committee decided no change is needed. Never went to the Board; any member can reopen it.
+- **Awaiting Board** — sent to the Board; held as-is until they decide (recallable).
 - **Board Approved** — advanced to the community vote.
 - **Board Rejected** — the Board's reason is shown on the flag. Any member can **Reopen for revision**, revise the proposal, and resubmit; the earlier decision stays in the thread.
 - **Deferred** — parked for a later round; can also be reopened.
+
+Two ways a discussion ends, both under **Committee actions** on the flag: **send it to the Board**, or **close it — no change needed**. Everything else is just discussion.
 
 Each flag page shows the lifecycle strip at the top — Flagged → Committee proposal → Awaiting Board → Board decision → Community vote — so you always know where it stands.
 

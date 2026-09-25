@@ -29,9 +29,9 @@
     <div class="stat-sub">submitted for approval</div>
   </div>
   <div class="stat-tile ok">
-    <div class="stat-label">Decided</div>
-    <div class="stat-num">{{ (status_counts.get('closed_no_change', 0) + status_counts.get('closed_changed', 0) + status_counts.get('closed_deferred', 0)) }}</div>
-    <div class="stat-sub">{{ status_counts.get('closed_changed', 0) }} approved · {{ status_counts.get('closed_no_change', 0) }} rejected · {{ status_counts.get('closed_deferred', 0) }} deferred</div>
+    <div class="stat-label">Resolved</div>
+    <div class="stat-num">{{ (status_counts.get('closed_no_change', 0) + status_counts.get('closed_changed', 0) + status_counts.get('closed_deferred', 0) + status_counts.get('closed_committee', 0)) }}</div>
+    <div class="stat-sub">{{ status_counts.get('closed_changed', 0) }} approved · {{ status_counts.get('closed_no_change', 0) }} rejected · {{ status_counts.get('closed_deferred', 0) }} deferred · {{ status_counts.get('closed_committee', 0) }} closed by committee</div>
   </div>
 </div>
 {% endblock %}
@@ -79,6 +79,7 @@
   .flag-status-badge.closed_changed { background: var(--accent-light); color: var(--accent); }
   .flag-status-badge.closed_no_change { background: var(--danger-light); color: var(--danger); }
   .flag-status-badge.closed_deferred { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .flag-status-badge.closed_committee { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border-strong); }
   .flag-type-badge {
     display: inline-block;
     padding: 2px 8px;
@@ -120,7 +121,9 @@
           <option value="open" {% if status_filter == 'open' %}selected{% endif %}>Open</option>
           <option value="in_review" {% if status_filter == 'in_review' %}selected{% endif %}>In Discussion</option>
           <option value="awaiting_board" {% if status_filter == 'awaiting_board' %}selected{% endif %}>Awaiting Board</option>
-          <option value="decided" {% if status_filter == 'decided' %}selected{% endif %}>Decided (all)</option>
+          <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Resolved (all)</option>
+          <option value="decided" {% if status_filter == 'decided' %}selected{% endif %}>Decided by the Board</option>
+          <option value="closed_committee" {% if status_filter == 'closed_committee' %}selected{% endif %}>Closed by committee</option>
           <option value="closed_changed" {% if status_filter == 'closed_changed' %}selected{% endif %}>Board Approved</option>
           <option value="closed_no_change" {% if status_filter == 'closed_no_change' %}selected{% endif %}>Board Rejected</option>
           <option value="closed_deferred" {% if status_filter == 'closed_deferred' %}selected{% endif %}>Deferred</option>

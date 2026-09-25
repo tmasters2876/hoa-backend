@@ -91,7 +91,7 @@ def flash_msgs(mock_flash):
 
 def test_status_vocabulary():
     assert set(FLAG_STATUS_LABELS) == {"open", "in_review", "awaiting_board",
-                                       "closed_changed", "closed_no_change", "closed_deferred"}
+                                       "closed_changed", "closed_no_change", "closed_deferred", "closed_committee"}
     assert FLAG_STATUS_LABELS["closed_changed"] == "Board Approved"
     assert FLAG_STATUS_LABELS["closed_no_change"] == "Board Rejected"
     assert "awaiting_board" in FLAG_ACTIVE_STATUSES
@@ -262,26 +262,83 @@ def test_reopen_refused_otherwise(client, sb, status):
         s, l = as_role("member")
         with s, l:
             client.post(f"/admin/flags/{FID}/reopen")
-    assert not sb.update.called and "only a rejected or deferred" in flash_msgs(fl)
+    assert not sb.update.called and "only a rejected, deferred, or committee-closed" in flash_msgs(fl)
 
 
-# ── legacy status route no longer closes flags ────────────────────────────────
+# ── committee close (owner decision, Sept 2026) ──────────────────────────────
 
-@pytest.mark.parametrize("status", ["closed_changed", "closed_no_change", "closed_deferred", "awaiting_board"])
-def test_status_route_cannot_close_or_submit(client, sb, status):
-    with patch("admin_app._fetch_flag", return_value=_flag("in_review")), patch("admin_app.flash") as fl:
-        s, l = as_role("superuser")
+@pytest.mark.parametrize("status", ["open", "in_review"])
+def test_any_member_can_close_with_reason(client, sb, status):
+    with patch("admin_app._fetch_flag", return_value=_flag(status)), patch("admin_app.log_audit_event"):
+        s, l = as_role("member", username="erin")
         with s, l:
-            client.post(f"/admin/flags/{FID}/status", data={"status": status})
-    assert not sb.update.called and "board decisions page" in flash_msgs(fl)
+            resp = client.post(f"/admin/flags/{FID}/close", data={"reason": "covered by BG 2022 p.9"})
+    assert resp.status_code == 302
+    u = updates(sb)[-1]
+    assert u["status"] == "closed_committee" and u["closed_by"] == "erin" and u["resolution_notes"] == "covered by BG 2022 p.9"
+    assert u["submitted_by"] is None
+    assert any("Closed by the committee" in c and "BG 2022" in c for c in system_comments(sb))
 
 
-def test_status_route_toggles_committee_states(client, sb):
-    with patch("admin_app._fetch_flag", return_value=_flag("open")), patch("admin_app.log_audit_event"):
+def test_close_requires_reason(client, sb):
+    with patch("admin_app._fetch_flag", return_value=_flag("in_review")), patch("admin_app.flash") as fl:
         s, l = as_role("member")
         with s, l:
-            client.post(f"/admin/flags/{FID}/status", data={"status": "in_review"})
-    assert updates(sb)[-1]["status"] == "in_review"
+            resp = client.post(f"/admin/flags/{FID}/close", data={"reason": "  "})
+    assert not sb.update.called and "reason" in flash_msgs(fl) and "#actions" in resp.headers["Location"]
+
+
+@pytest.mark.parametrize("status", ["awaiting_board", "closed_changed", "closed_no_change", "closed_committee"])
+def test_close_only_while_with_committee(client, sb, status):
+    with patch("admin_app._fetch_flag", return_value=_flag(status)), patch("admin_app.flash") as fl:
+        s, l = as_role("member")
+        with s, l:
+            client.post(f"/admin/flags/{FID}/close", data={"reason": "x"})
+    assert not sb.update.called and "still with the committee" in flash_msgs(fl)
+
+
+def test_member_reopens_committee_closed_flag(client, sb):
+    with patch("admin_app._fetch_flag", return_value=_flag("closed_committee", closed_by="erin", resolution_notes="fine as is")), patch("admin_app.log_audit_event"):
+        s, l = as_role("member")
+        with s, l:
+            resp = client.post(f"/admin/flags/{FID}/reopen")
+    assert resp.status_code == 302 and updates(sb)[-1]["status"] == "in_review"
+
+
+def test_committee_closed_never_reaches_board_queue(client, sb):
+    """The Board queue filters on awaiting_board; a committee close is not decided-by-Board either."""
+    from admin_app import FLAG_DECIDED_STATUSES, FLAG_CLOSED_STATUSES, FLAG_ACTIVE_STATUSES
+    assert "closed_committee" not in FLAG_DECIDED_STATUSES
+    assert "closed_committee" in FLAG_CLOSED_STATUSES
+    assert "closed_committee" not in FLAG_ACTIVE_STATUSES
+    assert FLAG_STATUS_LABELS["closed_committee"] == "Closed by committee"
+
+
+# ── auto In Discussion on first comment; no manual status route ──────────────
+
+def test_first_comment_moves_open_flag_to_in_discussion(client, sb):
+    with patch("admin_app._fetch_flag", return_value=_flag("open")):
+        s, l = as_role("member")
+        with s, l:
+            client.post(f"/admin/flags/{FID}/comment", data={"comment": "I think this is fine."})
+    u = updates(sb)[-1]
+    assert u["status"] == "in_review" and "updated_at" in u
+
+
+@pytest.mark.parametrize("status", ["in_review", "awaiting_board", "closed_committee", "closed_changed"])
+def test_later_comments_do_not_change_status(client, sb, status):
+    with patch("admin_app._fetch_flag", return_value=_flag(status)):
+        s, l = as_role("member")
+        with s, l:
+            client.post(f"/admin/flags/{FID}/comment", data={"comment": "more thoughts"})
+    assert "status" not in updates(sb)[-1]
+
+
+def test_manual_status_route_is_gone(client, sb):
+    s, l = as_role("superuser")
+    with s, l:
+        resp = client.post(f"/admin/flags/{FID}/status", data={"status": "in_review"})
+    assert resp.status_code in (404, 405)
 
 
 # ── Board Decisions page ──────────────────────────────────────────────────────
@@ -337,9 +394,24 @@ def _render_flag(client, sb, role, flag):
 
 def test_flag_page_member_editable_with_submit(client, sb):
     html = _render_flag(client, sb, "member", _flag("in_review"))
-    assert 'name="proposal_text"' in html and "Submit to the Board" in html
+    assert 'name="proposal_text"' in html and "Send to the Board" in html
+    assert "Committee actions" in html and "Close — no change needed" in html and 'name="reason"' in html
     assert "Recall from Board" not in html and 'name="decision"' not in html
+    assert "flag-status-select" not in html          # no manual status toggle
     assert "2 · Committee proposal" in html
+
+
+def test_flag_page_without_proposal_explains_send_needs_one(client, sb):
+    html = _render_flag(client, sb, "member", _flag("open", proposal_text=None))
+    assert "Record the proposal above first" in html and "Close — no change needed" in html
+
+
+def test_flag_page_committee_closed_shows_reason_and_reopen_to_members(client, sb):
+    html = _render_flag(client, sb, "member", _flag("closed_committee", closed_by="erin", resolution_notes="fine as is"))
+    assert "Closed by the committee" in html and "fine as is" in html and "closed by erin" in html
+    assert "Reopen" in html and "Committee actions" not in html and 'name="proposal_text"' not in html
+    assert "Closed by committee — no change needed" in html      # lifecycle strip
+    assert "Community vote" not in html
 
 
 def test_flag_page_awaiting_shows_recall_to_member_and_decision_to_board(client, sb):
@@ -351,7 +423,7 @@ def test_flag_page_awaiting_shows_recall_to_member_and_decision_to_board(client,
 
 def test_flag_page_rejected_shows_reason_and_reopen(client, sb):
     html = _render_flag(client, sb, "member", _flag("closed_no_change", closed_by="pres", resolution_notes="conflicts with state law", decided_at="2026-09-04T09:00:00"))
-    assert "Board Rejected" in html and "conflicts with state law" in html and "Reopen for revision" in html
+    assert "Board Rejected" in html and "conflicts with state law" in html and ">🔄 Reopen<" in html
     assert "pres" not in html                       # reviewer identity hidden from members
     assert 'name="proposal_text"' not in html        # locked until reopened
 
@@ -380,5 +452,5 @@ def test_clause_page_queries_flags_by_text_clause_id(client, sb):
 
 def test_guide_documents_submit_recall_and_board(client, sb):
     md = open(os.path.join(os.path.dirname(admin_app.__file__), "MEMBER_WORKFLOW.md"), encoding="utf-8").read()
-    for needle in ("Submit to the Board", "Recall from Board", "Awaiting Board", "Board Rejected", "Reopen for revision"):
+    for needle in ("Send to the Board", "Recall from Board", "Awaiting Board", "Board Rejected", "Close — no change needed", "Reopen"):
         assert needle in md, needle

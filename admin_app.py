@@ -2273,8 +2273,11 @@ def admin_questions():
 #
 # Lifecycle (sql/003_board_review.sql):
 #   open → in_review → awaiting_board → closed_changed | closed_no_change | closed_deferred
-#   committee discusses      any member submits      the Board decides (Board Decisions page)
-#                            (recallable until decided)   rejected/deferred may be reopened
+#   (first comment or          any member submits      the Board decides (Board Decisions page)
+#    saved proposal flips      (recallable until decided)   rejected/deferred may be reopened
+#    open → in_review)
+#                    └→ closed_committee   any member closes with a reason ("no change needed");
+#                                          never reaches the Board; any member may reopen
 # The closed_* values predate board review; the labels below are what users see.
 
 FLAG_STATUS_LABELS = {
@@ -2284,9 +2287,12 @@ FLAG_STATUS_LABELS = {
     "closed_changed": "Board Approved",
     "closed_no_change": "Board Rejected",
     "closed_deferred": "Deferred",
+    "closed_committee": "Closed by committee",
 }
 FLAG_ACTIVE_STATUSES = ["open", "in_review", "awaiting_board"]
-FLAG_DECIDED_STATUSES = ["closed_changed", "closed_no_change", "closed_deferred"]
+FLAG_DECIDED_STATUSES = ["closed_changed", "closed_no_change", "closed_deferred"]   # Board decisions only
+FLAG_CLOSED_STATUSES = FLAG_DECIDED_STATUSES + ["closed_committee"]                   # everything not active
+FLAG_REOPENABLE_STATUSES = ["closed_no_change", "closed_deferred", "closed_committee"]
 FLAG_DECISIONS = {  # Board decision → status
     "approved": "closed_changed",
     "rejected": "closed_no_change",
@@ -2341,6 +2347,8 @@ def admin_flags():
         query = query.in_("status", FLAG_ACTIVE_STATUSES)
     elif status_filter == "decided":
         query = query.in_("status", FLAG_DECIDED_STATUSES)
+    elif status_filter == "closed":
+        query = query.in_("status", FLAG_CLOSED_STATUSES)
     elif status_filter and status_filter != "all":
         query = query.eq("status", status_filter)
     if flag_type_filter:
@@ -2458,6 +2466,7 @@ def admin_flag_detail(flag_id: str):
         comments=comments,
         proposal_editable=flag.get("status") in ("open", "in_review"),
         can_decide=_role_rank(_current_role()) >= ROLE_RANK["board"],
+        reopenable=flag.get("status") in FLAG_REOPENABLE_STATUSES,
     )
 
 
@@ -2590,17 +2599,51 @@ def decide_flag(flag_id: str):
     return redirect(nxt if nxt.startswith("/admin") else url_for("admin_flag_detail", flag_id=flag_id))
 
 
-@app.post("/admin/flags/<flag_id>/reopen")
+@app.post("/admin/flags/<flag_id>/close")
 @login_required
-def reopen_flag(flag_id: str):
-    """After a rejection or deferral, any committee member reopens the flag to
-    revise the proposal. The decision stays in the thread."""
+def close_flag_by_committee(flag_id: str):
+    """The committee ends a flag itself — no change needed — without sending
+    it to the Board. Any member may close (reason required); any member may
+    reopen. Never touches the Board's queue or history."""
     flag = _fetch_flag(flag_id)
     if not flag:
         flash("Flag not found.", "error")
         return redirect(url_for("admin_flags"))
-    if flag.get("status") not in ("closed_no_change", "closed_deferred"):
-        flash("Only a rejected or deferred flag can be reopened.", "error")
+    if flag.get("status") not in ("open", "in_review"):
+        flash("Only a flag that is still with the committee can be closed here.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        flash("Please give a short reason for closing — it goes into the thread.", "error")
+        return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#actions")
+    now = datetime.now(timezone.utc).isoformat()
+    supabase().from_("clause_flags").update({
+        "status": "closed_committee",
+        "closed_by": session.get("username"),
+        "resolution_notes": reason,
+        "submitted_by": None,
+        "submitted_at": None,
+        "updated_at": now,
+    }).eq("id", flag_id).execute()
+    _flag_system_comment(flag_id, f"🗂 Closed by the committee — no change needed. {reason}")
+    log_audit_event(action="flag_closed_by_committee", clause_id=flag.get("clause_id"),
+                    notes=f"flag_id={flag_id}; {reason[:120]}")
+    flash("Closed. Any member can reopen it later if the committee changes its mind.", "success")
+    return redirect(url_for("admin_flag_detail", flag_id=flag_id))
+
+
+@app.post("/admin/flags/<flag_id>/reopen")
+@login_required
+def reopen_flag(flag_id: str):
+    """After a Board rejection/deferral or a committee close, any committee
+    member reopens the flag to pick it up again. The earlier decision stays
+    in the thread."""
+    flag = _fetch_flag(flag_id)
+    if not flag:
+        flash("Flag not found.", "error")
+        return redirect(url_for("admin_flags"))
+    if flag.get("status") not in FLAG_REOPENABLE_STATUSES:
+        flash("Only a rejected, deferred, or committee-closed flag can be reopened.", "error")
         return redirect(url_for("admin_flag_detail", flag_id=flag_id))
     now = datetime.now(timezone.utc).isoformat()
     supabase().from_("clause_flags").update({
@@ -2701,46 +2744,15 @@ def add_flag_comment(flag_id: str):
         "comment": comment,
     }).execute()
 
-    supabase().from_("clause_flags").update(
-        {"updated_at": datetime.now(timezone.utc).isoformat()}
-    ).eq("id", flag_id).execute()
+    # The first comment means the committee is talking: Open → In Discussion.
+    # No manual status toggle exists any more (owner decision, Sept 2026).
+    flag = _fetch_flag(flag_id)
+    bump = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if flag and flag.get("status") == "open":
+        bump["status"] = "in_review"
+    supabase().from_("clause_flags").update(bump).eq("id", flag_id).execute()
 
     return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#comments")
-
-
-@app.post("/admin/flags/<flag_id>/status")
-@login_required
-def update_flag_status(flag_id: str):
-    """Update flag status. Only superusers can close a flag."""
-    new_status = request.form.get("status", "").strip()
-    resolution_notes = request.form.get("resolution_notes", "").strip()
-
-    # Board decisions are recorded through /decide (Board Decisions page);
-    # submission/recall through /submit and /recall. This route only moves a
-    # flag between the committee's own states.
-    valid_statuses = ["open", "in_review"]
-    if new_status not in valid_statuses:
-        flash("Use the proposal panel to submit to the Board, and the Board Decisions page to decide.", "error")
-        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
-    flag = _fetch_flag(flag_id)
-    if not flag or flag.get("status") not in ("open", "in_review"):
-        flash("This flag is no longer with the committee.", "error")
-        return redirect(url_for("admin_flag_detail", flag_id=flag_id))
-
-    update_payload = {
-        "status": new_status,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    supabase().from_("clause_flags").update(update_payload).eq("id", flag_id).execute()
-
-    log_audit_event(
-        action="flag_status_updated",
-        notes=f"flag_id={flag_id}; new_status={new_status}",
-    )
-
-    flash(f"Flag status updated to {FLAG_STATUS_LABELS.get(new_status, new_status)}.", "success")
-    return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
 
 @app.get("/admin/search")

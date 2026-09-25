@@ -189,7 +189,7 @@ def test_guide_no_longer_tells_members_to_edit_the_database(client, mock_supabas
     low = md.lower()
     for stale in ("submit for approval", "edit the fields", "click **submit"):
         assert stale not in low, f"guide still says {stale!r}"
-    assert "submit to the board" in low and "recall" in low
+    assert "send to the board" in low and "recall" in low
     assert "never edit a clause" in low
     html = get(client, "member", "/admin/guide").get_data(as_text=True)
     assert "Submit for Approval" not in html

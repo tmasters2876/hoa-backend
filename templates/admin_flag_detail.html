@@ -25,6 +25,7 @@
   .flag-status-badge.closed_changed { background: var(--accent-light); color: var(--accent); border: 1px solid rgba(15,110,86,0.25); }
   .flag-status-badge.closed_no_change { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); }
   .flag-status-badge.closed_deferred { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .flag-status-badge.closed_committee { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border-strong); }
 
   .lifecycle { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:11px; color:var(--muted); margin-bottom:14px; }
   .lifecycle .step { padding:3px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); }
@@ -41,6 +42,12 @@
   .decision-box.closed_changed { background:var(--accent-light); border:1px solid rgba(15,110,86,0.25); color:#0a4e3b; }
   .decision-box.closed_no_change { background:var(--danger-light); border:1px solid var(--danger-border); color:#7a1a1c; }
   .decision-box.closed_deferred { background:var(--surface-2); border:1px solid var(--border); color:var(--muted); }
+  .decision-box.closed_committee { background:var(--surface-2); border:1px solid var(--border-strong); color:var(--ink); }
+  .actions-row { display:flex; flex-wrap:wrap; gap:14px; align-items:stretch; }
+  .action-card { flex:1 1 300px; border:1px solid var(--border); border-radius:var(--radius-md); padding:14px; background:var(--surface-2); }
+  .action-card h3 { margin:0 0 6px; font-size:13px; }
+  .action-card p { margin:0 0 10px; font-size:12px; color:var(--muted); line-height:1.5; }
+  .action-card input { font-size:12.5px; }
 
   .comment-thread { display: flex; flex-direction: column; gap: 12px; }
   .comment-item {
@@ -108,13 +115,19 @@
   {# ── Lifecycle ── #}
   {% set st = flag.status %}
   {% set decided = st in ['closed_changed', 'closed_no_change', 'closed_deferred'] %}
+  {% set committee_closed = st == 'closed_committee' %}
   <div class="panel" style="padding:12px 20px;">
     <div class="lifecycle" style="margin:0;">
       <span class="step {% if st == 'open' %}now{% else %}done{% endif %}">1 · Flagged</span><span class="arrow">→</span>
+      {% if committee_closed %}
+      <span class="step done">2 · Committee discussion</span><span class="arrow">→</span>
+      <span class="step now">Closed by committee — no change needed</span>
+      {% else %}
       <span class="step {% if st == 'in_review' %}now{% elif st != 'open' %}done{% endif %}">2 · Committee proposal</span><span class="arrow">→</span>
       <span class="step {% if st == 'awaiting_board' %}now{% elif decided %}done{% endif %}">3 · Awaiting Board</span><span class="arrow">→</span>
       <span class="step {% if decided %}now{% endif %}">4 · {% if decided %}{{ flag_status_labels.get(st, st) }}{% else %}Board decision{% endif %}</span>
       {% if st == 'closed_changed' %}<span class="arrow">→</span><span class="step">5 · Community vote</span>{% endif %}
+      {% endif %}
     </div>
   </div>
 
@@ -215,20 +228,22 @@
 
   </div>
 
-  {# ── Board decision (once decided) ── #}
-  {% if decided %}
+  {# ── Outcome (Board decision, or closed by the committee) ── #}
+  {% if decided or committee_closed %}
   <div class="panel" id="decision">
-    <h2 style="margin-bottom:10px; font-size:14px;">Board decision</h2>
+    <h2 style="margin-bottom:10px; font-size:14px;">{{ 'Closed by the committee' if committee_closed else 'Board decision' }}</h2>
     <div class="decision-box {{ st }}">
-      <strong>{{ flag_status_labels.get(st, st) }}</strong>{% if flag.decided_at %} <span style="opacity:0.75;">· {{ flag.decided_at[:16].replace('T',' ') }} UTC</span>{% endif %}
+      <strong>{{ flag_status_labels.get(st, st) }}</strong>{% if flag.decided_at and not committee_closed %} <span style="opacity:0.75;">· {{ flag.decided_at[:16].replace('T',' ') }} UTC</span>{% endif %}
       {% if st == 'closed_changed' %}<div style="margin-top:4px;">Advanced to the community for the final vote.</div>{% endif %}
+      {% if committee_closed %}<div style="margin-top:4px;">The committee looked at this and decided no change is needed. It was never sent to the Board.</div>{% endif %}
       {% if flag.resolution_notes %}<div style="margin-top:6px;"><span style="opacity:0.75;">Reason:</span> {{ flag.resolution_notes }}</div>{% endif %}
-      {% if flag.closed_by and (is_superuser or is_approver) %}<div class="muted" style="font-size:11px; margin-top:6px;">recorded by {{ flag.closed_by }}</div>{% endif %}
+      {% if flag.closed_by and (committee_closed or is_superuser or is_approver) %}<div class="muted" style="font-size:11px; margin-top:6px;">{{ 'closed by' if committee_closed else 'recorded by' }} {{ flag.closed_by }}</div>{% endif %}
     </div>
-    {% if st in ['closed_no_change', 'closed_deferred'] %}
+    {% if reopenable %}
     <form method="post" action="{{ url_for('reopen_flag', flag_id=flag.id) }}" style="margin-top:12px;"
-          onsubmit="return confirm('Reopen this flag so the committee can revise the proposal?');">
-      <button type="submit" class="ghost green">🔄 Reopen for revision</button>
+          onsubmit="return confirm('Reopen this flag so the committee can pick it up again?');">
+      <button type="submit" class="ghost green">🔄 Reopen</button>
+      <span class="muted" style="font-size:12px; margin-left:8px;">Closed by accident, or the committee changed its mind? One click brings it back — nothing is lost.</span>
     </form>
     {% endif %}
   </div>
@@ -269,11 +284,7 @@
     </form>
 
     {% if flag.proposal_text %}
-    <form method="post" action="{{ url_for('submit_flag_to_board', flag_id=flag.id) }}" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);"
-          onsubmit="return confirm('Submit this proposal to the Board for approval?\n\nThe proposal locks while the Board has it. Any committee member can recall it until the Board decides.');">
-      <button type="submit" style="width:auto;">📨 Submit to the Board</button>
-      <span class="muted" style="font-size:12px; margin-left:8px;">Any committee member can submit once the committee agrees.</span>
-    </form>
+    <p class="muted" style="font-size:12px; margin:12px 0 0;">When the committee agrees, send it to the Board from <a href="#actions">Committee actions</a> below.</p>
     {% endif %}
 
     {% else %}
@@ -353,23 +364,34 @@
     </form>
   </div>
 
-  {# ── Committee status (Open / In Discussion) — decisions go through the Board ── #}
+  {# ── Committee actions — the two ways a discussion ends ── #}
   {% if st in ['open', 'in_review'] %}
-  <div class="panel">
-    <h2 style="margin-bottom:12px; font-size:14px;">Committee status</h2>
-    <form method="post" action="{{ url_for('update_flag_status', flag_id=flag.id) }}" class="stack">
-      <div class="status-select-row">
-        <div class="field">
-          <label for="flag-status-select">Status</label>
-          <select id="flag-status-select" name="status">
-            <option value="open" {% if st == 'open' %}selected{% endif %}>Open — flagged, no proposal yet</option>
-            <option value="in_review" {% if st == 'in_review' %}selected{% endif %}>In Discussion — proposal being worked out</option>
-          </select>
-        </div>
-        <button type="submit">Update</button>
+  <div class="panel" id="actions">
+    <h2 style="margin-bottom:6px; font-size:14px;">Committee actions</h2>
+    <p class="muted" style="font-size:12px; margin:0 0 12px;">While the committee is still talking, nothing needs doing here — a flag moves to <strong>In Discussion</strong> on its own with the first comment. When the conversation reaches an end, pick one:</p>
+    <div class="actions-row">
+      <div class="action-card">
+        <h3>📨 Send to the Board</h3>
+        <p>The committee agrees on the proposal above and wants the Board to decide. Any member can send it; any member can recall it until the Board decides.</p>
+        {% if flag.proposal_text %}
+        <form method="post" action="{{ url_for('submit_flag_to_board', flag_id=flag.id) }}"
+              onsubmit="return confirm('Send this proposal to the Board?\n\nThe proposal is held as-is while the Board has it. Any committee member can recall it until the Board decides.');">
+          <button type="submit" style="width:auto;">📨 Send to the Board</button>
+        </form>
+        {% else %}
+        <span class="muted" style="font-size:12px;">Record the proposal above first — the Board needs something to decide on.</span>
+        {% endif %}
       </div>
-      <p class="muted" style="font-size:12px; margin:0;">Submitting the proposal above moves the flag to <strong>Awaiting Board</strong>; the Board's decision closes it.</p>
-    </form>
+      <div class="action-card">
+        <h3>🗂 Close — no change needed</h3>
+        <p>The committee looked at this and decided the current language is fine, or the concern is covered elsewhere. It will not go to the Board. Any member can reopen it later.</p>
+        <form method="post" action="{{ url_for('close_flag_by_committee', flag_id=flag.id) }}" class="stack"
+              onsubmit="return confirm('Close this flag without sending it to the Board?\n\nAny member can reopen it later.');">
+          <input name="reason" required placeholder="Reason (goes into the thread) — e.g. covered by the 2022 Builders Guidelines">
+          <button type="submit" class="ghost" style="width:auto;">🗂 Close — no change needed</button>
+        </form>
+      </div>
+    </div>
   </div>
   {% endif %}
 
