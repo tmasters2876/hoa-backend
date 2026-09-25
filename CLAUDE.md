@@ -159,7 +159,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 - `pending_changes` — two-person approval workflow; fields: `clause_id`, `submitted_by`, `action` ('edit'|'add'|'delete'), `proposed_changes` (jsonb), `original_values` (jsonb), `status`, `reviewed_by`
 - `clause_audit_log` — append-only, every clause action recorded, no deletes ever
 - `user_activity_log` — login/logout/action tracking with real IPs
-- `clause_flags` — CCR revision flags; `flag_type` (clause|topic), `cited_clause_ids` (text[]); lifecycle `open → in_review → awaiting_board → closed_changed | closed_no_change | closed_deferred` (labels: Open, In Discussion, Awaiting Board, Board Approved, Board Rejected, Deferred — `FLAG_STATUS_LABELS`); proposal columns `proposal_current/text/source/updated_by/updated_at`, `submitted_by/at`, `decided_at` (sql/003_board_review.sql). Any member saves/submits/recalls/reopens; board+ decides via `/admin/flags/<id>/decide` or `/admin/board`. Every lifecycle event is also an append-only system comment in the thread.
+- `clause_flags` — CCR revision flags; `flag_type` (clause|topic), `cited_clause_ids` (text[]); lifecycle `open → in_review → awaiting_board → closed_changed | closed_no_change | closed_deferred`, plus `closed_committee` as the committee's own exit (labels: Open, In Discussion, Awaiting Board, Board Approved, Board Rejected, Deferred, Closed by committee — `FLAG_STATUS_LABELS`); proposal columns `proposal_current/text/source/updated_by/updated_at`, `submitted_by/at`, `decided_at` (sql/003_board_review.sql, sql/004_committee_close.sql). Open→In Discussion flips automatically on the first comment; there is no manual status route. Any member saves/submits/recalls/closes (reason required)/reopens; board+ decides via `/admin/flags/<id>/decide` or `/admin/board`. `closed_committee` never appears in the Board queue or history. Every lifecycle event is also an append-only system comment in the thread.
 - `clause_flag_comments` — threaded append-only comments on flags
 - RPC `match_clauses` — vector similarity search (used by embedding regeneration in admin; not used by answer pipeline)
 
@@ -301,6 +301,7 @@ Then: `rm /tmp/gen_hash.py`
 | UTC timestamp cleanup | Pending | Remove broken central_time filter; display clean UTC with label |
 | Help panel update | Done (July 2026) | **Standing rule: the Help & Reference panel in admin_index.html is a core part of the console — update it with every user-visible change** |
 | sql/003_board_review.sql | Applied in prod (2026-09-24, verified via information_schema) and in the DEV stack | adds awaiting_board status + proposal/submission/decision columns |
+| sql/004_committee_close.sql | Applied in prod (2026-09-25) and in the DEV stack | adds the closed_committee status |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
 | MFA/TOTP | On hold | Use pyotp + qrcode; make optional not mandatory |
 

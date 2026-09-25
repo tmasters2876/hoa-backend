@@ -2,6 +2,8 @@
 
 **Status:** **LIVE in production** as of 2026-09-24 (branch `member-view` merged to `main`; `sql/003_board_review.sql` applied in production Supabase). Part 2 below remains the backlog for review.
 
+**Update 2026-09-25 (committee close, live):** the committee can now end a flag itself — *Close, no change needed* under a new **Committee actions** panel (any member, reason required, reopenable by any member; never reaches the Board). Open flips to In Discussion automatically on the first comment and the manual status control is gone. Two exits only: Send to the Board, or Close. `sql/004_committee_close.sql` applied in production.
+
 **Update 2026-09-24 (owner chose Option B):** the Board review loop is built — proposal panel on every flag, *Submit to the Board* by any committee member, *Recall* until the Board decides, a **Board Decisions** page (queue + decided) for board-and-up with Approve / Reject (reason required) / Defer, *Reopen for revision* after a rejection or deferral, status labels renamed to Board terms, and a Flag button on the clause page. That covers proposed features 1, 2, 6 and 11 below. Requires `sql/003_board_review.sql` in production before merge.
 
 **Premise (owner direction, 2026-09-24):** committee members are revising the *governing documents*, not this database. The database is the current documents laid out clause by clause so the committee can read, search, and discuss them. Members deliberate and propose through **revision flags**; the Board approves or rejects; the community votes; the database is updated afterward to match the ratified documents. Members therefore never see any database-maintenance activity.
