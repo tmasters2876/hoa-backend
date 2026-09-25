@@ -1,6 +1,6 @@
 # Member view — owner review (Sept 2026)
 
-**Status:** implemented on branch `member-view`, running in the local DEV sandbox. Not on `main`, not deployed.
+**Status:** **LIVE in production** as of 2026-09-24 (branch `member-view` merged to `main`; `sql/003_board_review.sql` applied in production Supabase). Part 2 below remains the backlog for review.
 
 **Update 2026-09-24 (owner chose Option B):** the Board review loop is built — proposal panel on every flag, *Submit to the Board* by any committee member, *Recall* until the Board decides, a **Board Decisions** page (queue + decided) for board-and-up with Approve / Reject (reason required) / Defer, *Reopen for revision* after a rejection or deferral, status labels renamed to Board terms, and a Flag button on the clause page. That covers proposed features 1, 2, 6 and 11 below. Requires `sql/003_board_review.sql` in production before merge.
 

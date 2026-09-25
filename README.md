@@ -5,7 +5,7 @@ Two production services for Plantation Lakes Community Association (Waller & Gri
 - **hoa-backend** — public Flask API behind the Carrd-embedded resident chatbot (`POST /ask`). Residents ask questions; GPT answers from the governing-document clause database with citations.
 - **hoa-admin** — the admin console (hoa-admin.onrender.com) where the clause database is maintained, resident questions are reviewed, and the governing-document revision effort is run.
 
-Developer documentation lives in [CLAUDE.md](CLAUDE.md). The improvement backlog and its history live in [ADMIN_IMPROVEMENTS.md](ADMIN_IMPROVEMENTS.md). The committee member guide is [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md).
+Developer documentation lives in [CLAUDE.md](CLAUDE.md). The improvement backlog and its history live in [ADMIN_IMPROVEMENTS.md](ADMIN_IMPROVEMENTS.md); the committee-facing backlog is [MEMBER_VIEW_REVIEW.md](MEMBER_VIEW_REVIEW.md). The committee member guide is [MEMBER_WORKFLOW.md](MEMBER_WORKFLOW.md).
 
 ---
 

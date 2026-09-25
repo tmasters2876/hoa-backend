@@ -7,7 +7,7 @@ Last updated: September 2026
 This repo powers two production services for Plantation Lakes Community Association (PLCA), an HOA spanning Waller and Grimes Counties, Texas.
 
 - **hoa-backend** — public-facing Flask API answering resident questions via a Carrd-embedded chatbot
-- **hoa-admin** — protected admin console (Flask + Jinja2) for board members and staff to manage the clause database, review pending changes, manage users, and run the CCR revision flag workflow
+- **hoa-admin** — protected admin console (Flask + Jinja2). Committee members read, search and flag the governing documents and propose revised language on flags; the Board decides each proposal on the Board Decisions page; board/superuser maintain the clause database (edits, approvals, users). See THE LAW below.
 
 **hoa-admin has a local dev environment** (`dev/`, added Sept 2026): a local Supabase stack in Docker seeded from a copy of production, run with `dev/dev.sh` — see [dev/README.md](dev/README.md). Test UI/UX changes there before pushing; pushing to `main` still deploys straight to production. Changes to hoa-backend (the public API) are tested on the dev service first (`../hoa-backend-dev/`), then applied independently to prod.
 
@@ -71,7 +71,8 @@ hoa-backend/
     ├── admin_change_password.html
     ├── admin_questions.html      (resident question log, board+)
     ├── admin_clause_detail.html  (clause permalink pages)
-    ├── admin_my_submissions.html
+    ├── admin_my_submissions.html (board+ since Sept 2026)
+    ├── admin_board.html          (Board Decisions: queue + decided, board+)
     └── admin_tags.html           (tag management, superuser)
 ```
 
@@ -299,7 +300,7 @@ Then: `rm /tmp/gen_hash.py`
 | Mixed-case tag audit | UI task now | `/admin/tags` (superuser) lists tags with mixed-case badges; rename to UPPERCASE from the page — no SQL needed |
 | UTC timestamp cleanup | Pending | Remove broken central_time filter; display clean UTC with label |
 | Help panel update | Done (July 2026) | **Standing rule: the Help & Reference panel in admin_index.html is a core part of the console — update it with every user-visible change** |
-| sql/003_board_review.sql | **Run in prod Supabase BEFORE merging member-view** | adds awaiting_board status + proposal/submission/decision columns; already applied in the DEV stack |
+| sql/003_board_review.sql | Applied in prod (2026-09-24, verified via information_schema) and in the DEV stack | adds awaiting_board status + proposal/submission/decision columns |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
 | MFA/TOTP | On hold | Use pyotp + qrcode; make optional not mandatory |
 
