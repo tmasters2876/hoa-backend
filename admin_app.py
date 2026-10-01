@@ -2501,7 +2501,10 @@ def save_flag_proposal(flag_id: str):
         "updated_at": now,
     }).eq("id", flag_id).execute()
     log_audit_event(action="flag_proposal_saved", clause_id=flag.get("clause_id"),
-                    notes=f"flag_id={flag_id}")
+                    field_changed="status" if flag.get("status") == "open" else None,
+                    old_value="open" if flag.get("status") == "open" else None,
+                    new_value="in_review" if flag.get("status") == "open" else None,
+                    notes=f"flag_id={flag_id}" + ("; first proposal moved the flag to In Discussion" if flag.get("status") == "open" else ""))
     flash("Proposal saved. Submit it to the Board when the committee agrees.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
 
@@ -2751,6 +2754,10 @@ def add_flag_comment(flag_id: str):
     if flag and flag.get("status") == "open":
         bump["status"] = "in_review"
     supabase().from_("clause_flags").update(bump).eq("id", flag_id).execute()
+    if bump.get("status"):
+        log_audit_event(action="flag_in_discussion", clause_id=flag.get("clause_id"),
+                        field_changed="status", old_value="open", new_value="in_review",
+                        notes=f"flag_id={flag_id}; first comment")
 
     return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#comments")
 

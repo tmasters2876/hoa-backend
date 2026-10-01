@@ -316,22 +316,43 @@ def test_committee_closed_never_reaches_board_queue(client, sb):
 
 # ── auto In Discussion on first comment; no manual status route ──────────────
 
-def test_first_comment_moves_open_flag_to_in_discussion(client, sb):
-    with patch("admin_app._fetch_flag", return_value=_flag("open")):
+def test_first_comment_moves_open_flag_to_in_discussion_and_audits_it(client, sb):
+    with patch("admin_app._fetch_flag", return_value=_flag("open")), patch("admin_app.log_audit_event") as audit:
         s, l = as_role("member")
         with s, l:
             client.post(f"/admin/flags/{FID}/comment", data={"comment": "I think this is fine."})
     u = updates(sb)[-1]
     assert u["status"] == "in_review" and "updated_at" in u
+    # the automatic transition is on the record, not just in the row
+    assert audit.call_count == 1
+    kw = audit.call_args.kwargs
+    assert kw["action"] == "flag_in_discussion" and kw["field_changed"] == "status"
+    assert kw["old_value"] == "open" and kw["new_value"] == "in_review" and FID in kw["notes"]
 
 
 @pytest.mark.parametrize("status", ["in_review", "awaiting_board", "closed_committee", "closed_changed"])
-def test_later_comments_do_not_change_status(client, sb, status):
-    with patch("admin_app._fetch_flag", return_value=_flag(status)):
+def test_later_comments_do_not_change_status_or_audit(client, sb, status):
+    with patch("admin_app._fetch_flag", return_value=_flag(status)), patch("admin_app.log_audit_event") as audit:
         s, l = as_role("member")
         with s, l:
             client.post(f"/admin/flags/{FID}/comment", data={"comment": "more thoughts"})
     assert "status" not in updates(sb)[-1]
+    assert not audit.called
+
+
+def test_first_proposal_records_the_open_to_in_discussion_move_in_its_audit_row(client, sb):
+    with patch("admin_app._fetch_flag", return_value=_flag("open")), patch("admin_app.log_audit_event") as audit:
+        s, l = as_role("member")
+        with s, l:
+            client.post(f"/admin/flags/{FID}/proposal", data={"proposal_text": "new words"})
+    kw = audit.call_args.kwargs
+    assert kw["action"] == "flag_proposal_saved"
+    assert kw["field_changed"] == "status" and kw["old_value"] == "open" and kw["new_value"] == "in_review"
+    with patch("admin_app._fetch_flag", return_value=_flag("in_review")), patch("admin_app.log_audit_event") as audit2:
+        s, l = as_role("member")
+        with s, l:
+            client.post(f"/admin/flags/{FID}/proposal", data={"proposal_text": "newer words"})
+    assert audit2.call_args.kwargs["field_changed"] is None
 
 
 def test_manual_status_route_is_gone(client, sb):
