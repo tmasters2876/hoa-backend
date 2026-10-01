@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% if dev_mode %}[DEV] {% endif %}PLCA Admin — Sign In</title>
+    <title>PLCA Admin — Reset Password</title>
     <style>
       :root {
         --accent: #0f6e56;
@@ -57,6 +57,7 @@
       .login-sub {
         font-size: 12px; color: var(--muted);
         margin-bottom: 24px;
+        line-height: 1.5;
       }
       .login-field { margin-bottom: 14px; }
       .login-label {
@@ -78,6 +79,13 @@
         outline: none;
         border-color: var(--accent);
         box-shadow: 0 0 0 3px rgba(15,110,86,0.12);
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+        margin-bottom: 14px;
+        line-height: 1.5;
       }
       .login-btn {
         width: 100%;
@@ -101,6 +109,11 @@
         color: #7a1a1c;
         margin-bottom: 16px;
       }
+      .flash.success {
+        border-color: rgba(15,110,86,0.3);
+        background: rgba(15,110,86,0.06);
+        color: #0a4e3b;
+      }
       .login-footer {
         font-size: 11px;
         color: var(--muted);
@@ -114,38 +127,32 @@
     <div class="login-wrap">
       <div class="login-logo"><div class="login-logo-mark"></div></div>
       <div class="login-card">
-        <div class="login-title">HOA Admin Console</div>
-        <div class="login-sub">Plantation Lakes Community Assoc.</div>
-        {% if dev_mode %}
-        <div class="flash" style="border-color:#f0c040; background:#fef3c7; color:#7a5200;">
-          <strong>DEV · local sandbox.</strong> Local Supabase, seeded from a copy of production. Every account signs in with the dev password (see dev/README.md).
-        </div>
-        {% endif %}
+        <div class="login-title">Choose a new password</div>
+        <div class="login-sub">{% if username %}For <strong>{{ username }}</strong>. {% endif %}Minimum 8 characters.</div>
 
         {% with flashes = get_flashed_messages(with_categories=true) %}
           {% for category, message in flashes %}
-            <div class="flash">{{ message }}</div>
+            <div class="flash {{ category }}">{{ message }}</div>
           {% endfor %}
         {% endwith %}
 
-        <form method="post" action="{{ url_for('login_post') }}">
+        {% if token %}
+        <form method="post" action="{{ url_for('reset_password_post', token=token) }}" autocomplete="off">
           <div class="login-field">
-            <label class="login-label" for="username">Username</label>
-            <input class="login-input" id="username" name="username"
-                   type="text" autocomplete="username" required autofocus>
+            <label class="login-label" for="new_password">New password</label>
+            <input class="login-input" id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="8" required autofocus>
           </div>
           <div class="login-field">
-            <label class="login-label" for="password">Password</label>
-            <input class="login-input" id="password" name="password"
-                   type="password" autocomplete="current-password" required>
+            <label class="login-label" for="confirm_password">Confirm password</label>
+            <input class="login-input" id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
           </div>
-          <button class="login-btn" type="submit">Sign in</button>
+          <button class="login-btn" type="submit">Set password and sign in</button>
         </form>
-        {% if mail_enabled %}
-        <div class="login-footer" style="margin-top:14px;"><a href="{{ url_for('forgot_password') }}" style="color:var(--accent);">Forgot your password?</a></div>
+        {% else %}
+        <div class="login-footer" style="margin-top:4px;"><a href="{{ url_for('forgot_password') }}" style="color:var(--accent);">Request a new link</a></div>
         {% endif %}
       </div>
-      <div class="login-footer">Sessions expire after 8 hours &middot; PLCA internal use only</div>
+      <div class="login-footer">PLCA internal use only</div>
     </div>
   </body>
 </html>

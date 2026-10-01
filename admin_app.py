@@ -1,14 +1,17 @@
 import csv
 import functools
+import hashlib
 import io
 import math
 import os
 import re
+import secrets
 import threading
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
 import bcrypt
+import mailer
 import pdfplumber
 import requests as http_requests
 from rapidfuzz import fuzz
@@ -548,6 +551,7 @@ def inject_superuser():
         # database-changing surface in the templates is behind this flag.
         "can_edit_db": rank >= ROLE_RANK["board"],
         "dev_mode": is_dev_mode(),
+        "mail_enabled": mailer.enabled(),
     }
 
 
@@ -1409,7 +1413,7 @@ def admin_users():
         result = (
             supabase()
             .from_("admin_users")
-            .select("id,username,is_active,created_at,must_change_password,role")
+            .select("id,username,is_active,created_at,must_change_password,role,email,notify_flags")
             .order("created_at")
             .execute()
         )
@@ -1462,6 +1466,7 @@ def admin_users():
     return render_template(
         "admin_users.html",
         users=users,
+        me=_my_account(),
         current_user_id=session.get("user_id"),
         is_superuser=is_superuser,
         last_logins=last_logins,
@@ -1479,6 +1484,10 @@ def create_user():
     if not username or not password:
         flash("Username and password are both required.", "error")
         return redirect(url_for("admin_users"))
+    email = _clean_email(request.form.get("email", ""))
+    if request.form.get("email", "").strip() and not email:
+        flash("That email address does not look right.", "error")
+        return redirect(url_for("admin_users"))
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
     try:
         role = (request.form.get("role") or "member").strip().lower()
@@ -1489,17 +1498,238 @@ def create_user():
             "password_hash": password_hash,
             "must_change_password": True,
             "role": role,
+            "email": email,
             # legacy mirror kept in sync as a rollback aid (see sql/002_roles.sql)
             "is_approver": role == "board",
         }).execute()
         log_audit_event(action="user_added", new_value=username)
         flash(f"User '{username}' created.", "success")
     except Exception as e:
-        if "unique" in str(e).lower():
+        if "admin_users_email_key" in str(e):
+            flash("That email address is already on another account.", "error")
+        elif "unique" in str(e).lower():
             flash(f"Username '{username}' already exists.", "error")
         else:
             flash(f"Could not create user: {e}", "error")
     return redirect(url_for("admin_users"))
+
+
+# ── Email on accounts ─────────────────────────────────────────────────────────
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _clean_email(raw: str) -> str | None:
+    e = (raw or "").strip().lower()
+    return e if e and _EMAIL_RE.match(e) and len(e) <= 254 else None
+
+
+def _my_account() -> dict:
+    """The signed-in user's own email + notification setting (any role)."""
+    try:
+        rows = (supabase().from_("admin_users").select("id,username,email,notify_flags")
+                .eq("id", session.get("user_id")).limit(1).execute().data) or []
+        return rows[0] if rows else {}
+    except Exception:
+        return {}
+
+
+@app.post("/admin/users/me/email")
+@login_required
+def set_my_email():
+    """Any signed-in user sets the email on their own account and whether flag
+    activity is emailed to them."""
+    raw = request.form.get("email", "")
+    email = _clean_email(raw)
+    if raw.strip() and not email:
+        flash("That email address does not look right.", "error")
+        return redirect(url_for("admin_users"))
+    notify = bool(request.form.get("notify_flags"))
+    try:
+        supabase().from_("admin_users").update({"email": email, "notify_flags": notify}).eq("id", session.get("user_id")).execute()
+    except Exception as e:
+        flash("That email address is already on another account." if "admin_users_email_key" in str(e) else f"Could not save: {e}", "error")
+        return redirect(url_for("admin_users"))
+    log_audit_event(action="user_email_set", new_value=email or "(cleared)",
+                    notes=f"own account; notifications {'on' if notify else 'off'}")
+    flash("Saved." + (" You will be emailed about flag activity." if (email and notify) else ""), "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.post("/admin/users/<user_id>/set-email")
+@superuser_required
+def set_user_email(user_id: str):
+    raw = request.form.get("email", "")
+    email = _clean_email(raw)
+    if raw.strip() and not email:
+        return jsonify({"ok": False, "message": "That email address does not look right."})
+    target = (supabase().from_("admin_users").select("username").eq("id", user_id).limit(1).execute().data or [{}])[0]
+    if not target.get("username"):
+        return jsonify({"ok": False, "message": "User not found."})
+    try:
+        supabase().from_("admin_users").update({"email": email}).eq("id", user_id).execute()
+    except Exception as e:
+        return jsonify({"ok": False, "message": "That email address is already on another account." if "admin_users_email_key" in str(e) else f"Could not save: {e}"})
+    log_audit_event(action="user_email_set", new_value=email or "(cleared)", notes=f"user={target['username']}")
+    return jsonify({"ok": True, "message": f"Email {'set' if email else 'cleared'} for {target['username']}."})
+
+
+# ── Forgot / reset password (by username or email) ────────────────────────────
+
+RESET_TOKEN_MINUTES = 60
+_RESET_SENT_MSG = "If that matches an account with an email on file, a reset link is on its way. It works for one hour."
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _find_user_by_identifier(identifier: str) -> dict | None:
+    ident = (identifier or "").strip().lower()
+    if not ident:
+        return None
+    col = "email" if "@" in ident else "username"
+    rows = (supabase().from_("admin_users").select("id,username,email,is_active")
+            .eq(col, ident).limit(1).execute().data) or []
+    return rows[0] if rows else None
+
+
+def _base_url() -> str:
+    return (os.getenv("HOA_BASE_URL") or request.url_root).rstrip("/")
+
+
+@app.get("/forgot")
+def forgot_password():
+    if not mailer.enabled():
+        flash("Password reset by email is not switched on. Contact the Board or the administrator for a temporary password.", "error")
+        return redirect(url_for("login"))
+    return render_template("admin_forgot.html")
+
+
+@app.post("/forgot")
+def forgot_password_post():
+    if not mailer.enabled():
+        return redirect(url_for("login"))
+    identifier = request.form.get("identifier", "").strip()
+    key = _login_attempt_key("forgot::" + identifier)
+    if _is_login_locked(key):
+        flash("Too many requests. Please wait 15 minutes and try again.", "error")
+        return render_template("admin_forgot.html"), 429
+    _record_login_failure(key)          # every request counts toward the same 5-per-15-minutes limit
+    user = _find_user_by_identifier(identifier)
+    log_user_activity(identifier.lower(), "password_reset_requested")
+    if user and user.get("is_active") and user.get("email"):
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        supabase().from_("password_resets").insert({
+            "user_id": user["id"],
+            "token_hash": _hash_token(token),
+            "expires_at": (now + timedelta(minutes=RESET_TOKEN_MINUTES)).isoformat(),
+            "requested_ip": request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip(),
+        }).execute()
+        link = f"{_base_url()}/reset/{token}"
+        mailer.send_email(
+            user["email"], "Reset your password",
+            f"Hello {user['username']},\n\nSomeone asked to reset the password on your PLCA Console account. "
+            f"If that was you, open this link within the next hour:\n\n{link}\n\n"
+            "If it was not you, ignore this message; your password has not changed.\n",
+            kind="password_reset", related_id=user["id"],
+        )
+    flash(_RESET_SENT_MSG, "success")
+    return redirect(url_for("login"))
+
+
+def _valid_reset(token: str) -> tuple[dict | None, dict | None]:
+    """(reset_row, user_row) if the token is unused and unexpired, else (None, None)."""
+    if not token or len(token) > 128:
+        return None, None
+    rows = (supabase().from_("password_resets").select("id,user_id,expires_at,used_at")
+            .eq("token_hash", _hash_token(token)).limit(1).execute().data) or []
+    if not rows or rows[0].get("used_at"):
+        return None, None
+    row = rows[0]
+    try:
+        exp = datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00"))
+    except Exception:
+        return None, None
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < datetime.now(timezone.utc):
+        return None, None
+    users = (supabase().from_("admin_users").select("id,username,is_active").eq("id", row["user_id"]).limit(1).execute().data) or []
+    if not users or not users[0].get("is_active"):
+        return None, None
+    return row, users[0]
+
+
+@app.get("/reset/<token>")
+def reset_password(token: str):
+    row, user = _valid_reset(token)
+    if not row:
+        flash("That reset link is invalid or has expired.", "error")
+        return render_template("admin_reset.html", token=None, username=None), 400
+    return render_template("admin_reset.html", token=token, username=user["username"])
+
+
+@app.post("/reset/<token>")
+def reset_password_post(token: str):
+    row, user = _valid_reset(token)
+    if not row:
+        flash("That reset link is invalid or has expired.", "error")
+        return render_template("admin_reset.html", token=None, username=None), 400
+    new_password = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+    if len(new_password) < 8:
+        flash("Password must be at least 8 characters.", "error")
+        return render_template("admin_reset.html", token=token, username=user["username"]), 400
+    if new_password != confirm:
+        flash("Passwords do not match.", "error")
+        return render_template("admin_reset.html", token=token, username=user["username"]), 400
+    now = datetime.now(timezone.utc).isoformat()
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    supabase().from_("admin_users").update({"password_hash": password_hash, "must_change_password": False}).eq("id", user["id"]).execute()
+    supabase().from_("password_resets").update({"used_at": now}).eq("id", row["id"]).execute()
+    log_user_activity(user["username"], "password_reset_by_email")
+    log_audit_event(action="password_reset", new_value=user["username"], notes="by email link")
+    _clear_login_attempts(_login_attempt_key(user["username"]))
+    session.clear()
+    flash("Password updated. Sign in with your new password.", "success")
+    return redirect(url_for("login"))
+
+
+# ── DEV outbox (file mail backend only) ───────────────────────────────────────
+
+def _dev_outbox_required(f):
+    @functools.wraps(f)
+    def wrapper(*a, **kw):
+        if not (is_dev_mode() and mailer.backend() == "file"):
+            flash("The Outbox exists only in the DEV sandbox.", "error")
+            return redirect(url_for("admin_home"))
+        return f(*a, **kw)
+    return wrapper
+
+
+@app.get("/admin/dev/mail")
+@login_required
+@_dev_outbox_required
+def dev_mail_outbox():
+    return render_template("admin_dev_mail.html", items=mailer.outbox(), message=None)
+
+
+@app.get("/admin/dev/mail/<item_id>")
+@login_required
+@_dev_outbox_required
+def dev_mail_view(item_id: str):
+    return render_template("admin_dev_mail.html", items=mailer.outbox(), message=mailer.outbox_message(item_id))
+
+
+@app.post("/admin/dev/mail/clear")
+@login_required
+@_dev_outbox_required
+def dev_mail_clear():
+    n = mailer.clear_outbox()
+    flash(f"Cleared {n} file(s).", "success")
+    return redirect(url_for("dev_mail_outbox"))
 
 
 @app.post("/admin/users/<user_id>/toggle")
@@ -2312,6 +2542,97 @@ def _flag_system_comment(flag_id: str, text: str) -> None:
         print(f"[flags] WARNING: system comment failed: {e}")
 
 
+# ── Flag notifications ────────────────────────────────────────────────────────
+# Who hears about what. Pure routing (notification_recipients) is unit-tested;
+# _notify_flag_event gathers the data on the request thread and sends off it.
+
+FLAG_EVENTS = {
+    "created":   ("New revision flag",        "raised a flag"),
+    "comment":   ("New comment",              "commented"),
+    "proposal":  ("Proposal recorded",        "recorded proposed language"),
+    "submitted": ("Sent to the Board",        "sent the flag to the Board"),
+    "recalled":  ("Recalled from the Board",  "recalled the flag from the Board"),
+    "decided":   ("Board decision",           "recorded the Board's decision"),
+    "closed":    ("Closed by the committee",  "closed the flag"),
+    "reopened":  ("Reopened",                 "reopened the flag"),
+}
+
+
+def notification_recipients(event: str, participants: set[str], users: list[dict], actor: str | None) -> list[dict]:
+    """users: active rows with username, email, role, notify_flags.
+    created              → everyone (the committee hears about new work)
+    submitted / recalled → Board-and-up, plus the people already in the thread
+    everything else      → the people in the thread (flagger + commenters)
+    Never the person who did it; never anyone who switched notifications off."""
+    out = []
+    for u in users:
+        if not u.get("email") or not u.get("is_active", True) or not u.get("notify_flags", True):
+            continue
+        if actor and u.get("username") == actor:
+            continue
+        name, rank = u.get("username"), _role_rank(u.get("role"))
+        if event == "created":
+            out.append(u)
+        elif event in ("submitted", "recalled"):
+            if rank >= ROLE_RANK["board"] or name in participants:
+                out.append(u)
+        elif name in participants:
+            out.append(u)
+    return out
+
+
+def _flag_title(flag: dict) -> str:
+    if flag.get("flag_type") == "topic":
+        return (flag.get("question_text") or "topic flag")[:80]
+    return flag.get("clause_id") or "flag"
+
+
+def _flag_participants(flag: dict) -> set[str]:
+    names = {flag.get("flagged_by")}
+    try:
+        rows = supabase().from_("clause_flag_comments").select("author").eq("flag_id", flag["id"]).execute().data or []
+        names |= {r.get("author") for r in rows}
+    except Exception:
+        pass
+    return {n for n in names if n}
+
+
+def _notify_flag_event(event: str, flag: dict | None, detail: str = "") -> None:
+    """Email the right people about a flag event. Never raises; never blocks
+    the request in production (sends on a thread)."""
+    if not flag or event not in FLAG_EVENTS or not mailer.enabled():
+        return
+    try:
+        actor = session.get("username")
+        headline, verb = FLAG_EVENTS[event]
+        status_label = FLAG_STATUS_LABELS.get(flag.get("status"), flag.get("status") or "")
+        users = supabase().from_("admin_users").select("username,email,role,is_active,notify_flags").eq("is_active", True).execute().data or []
+        recipients = notification_recipients(event, _flag_participants(flag), users, actor)
+        if not recipients:
+            return
+        title = _flag_title(flag)
+        link = f"{_base_url()}/admin/flags/{flag['id']}"
+        body = (f"{actor or 'A committee member'} {verb} on {title}.\n"
+                f"Status now: {status_label}.\n"
+                + (f"\n{detail.strip()}\n" if detail and detail.strip() else "")
+                + f"\nOpen the flag: {link}\n\n"
+                "You get these because you have an email on your PLCA Console account. "
+                "Switch them off under Account.\n")
+        subject = f"{headline}: {title}"
+        jobs = [(u["email"], subject, body, event, flag["id"]) for u in recipients]
+
+        def _send_all():
+            for to, subj, text, kind, rid in jobs:
+                mailer.send_email(to, subj, text, kind=f"flag_{kind}", related_id=rid)
+
+        if app.config.get("TESTING") or os.getenv("MAIL_SYNC") == "1":
+            _send_all()
+        else:
+            threading.Thread(target=_send_all, daemon=True).start()
+    except Exception as e:
+        print(f"[notify] WARNING: {event} notification failed: {e}", flush=True)
+
+
 def _fetch_flag(flag_id: str) -> dict | None:
     rows = (
         supabase().from_("clause_flags").select("*").eq("id", flag_id).limit(1).execute()
@@ -2505,6 +2826,7 @@ def save_flag_proposal(flag_id: str):
                     old_value="open" if flag.get("status") == "open" else None,
                     new_value="in_review" if flag.get("status") == "open" else None,
                     notes=f"flag_id={flag_id}" + ("; first proposal moved the flag to In Discussion" if flag.get("status") == "open" else ""))
+    _notify_flag_event("proposal", {**flag, "status": "in_review" if flag.get("status") == "open" else flag.get("status")}, proposal_text)
     flash("Proposal saved. Submit it to the Board when the committee agrees.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
 
@@ -2534,6 +2856,7 @@ def submit_flag_to_board(flag_id: str):
     _flag_system_comment(flag_id, "📨 Submitted to the Board for approval.")
     log_audit_event(action="flag_submitted_to_board", clause_id=flag.get("clause_id"),
                     notes=f"flag_id={flag_id}")
+    _notify_flag_event("submitted", {**flag, "status": "awaiting_board"}, flag.get("proposal_text") or "")
     flash("Submitted to the Board. You can recall it until the Board decides.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
@@ -2560,6 +2883,7 @@ def recall_flag_from_board(flag_id: str):
     _flag_system_comment(flag_id, "↩️ Recalled from the Board." + (f" Reason: {reason}" if reason else ""))
     log_audit_event(action="flag_recalled", clause_id=flag.get("clause_id"),
                     notes=f"flag_id={flag_id}; {reason[:120]}")
+    _notify_flag_event("recalled", {**flag, "status": "in_review"}, reason)
     flash("Recalled. The flag is back with the committee.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
@@ -2597,6 +2921,7 @@ def decide_flag(flag_id: str):
     _flag_system_comment(flag_id, f"{icon} Board decision: {label}." + (f" {notes}" if notes else ""))
     log_audit_event(action="flag_board_decision", clause_id=flag.get("clause_id"),
                     notes=f"flag_id={flag_id}; {decision}; {notes[:120]}")
+    _notify_flag_event("decided", {**flag, "status": new_status}, f"{label}." + (f" {notes}" if notes else ""))
     flash(f"Recorded: {label}.", "success")
     nxt = request.form.get("next", "")
     return redirect(nxt if nxt.startswith("/admin") else url_for("admin_flag_detail", flag_id=flag_id))
@@ -2631,6 +2956,7 @@ def close_flag_by_committee(flag_id: str):
     _flag_system_comment(flag_id, f"🗂 Closed by the committee — no change needed. {reason}")
     log_audit_event(action="flag_closed_by_committee", clause_id=flag.get("clause_id"),
                     notes=f"flag_id={flag_id}; {reason[:120]}")
+    _notify_flag_event("closed", {**flag, "status": "closed_committee"}, reason)
     flash("Closed. Any member can reopen it later if the committee changes its mind.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id))
 
@@ -2657,6 +2983,7 @@ def reopen_flag(flag_id: str):
     }).eq("id", flag_id).execute()
     _flag_system_comment(flag_id, "🔄 Reopened for revision.")
     log_audit_event(action="flag_reopened", clause_id=flag.get("clause_id"), notes=f"flag_id={flag_id}")
+    _notify_flag_event("reopened", {**flag, "status": "in_review"})
     flash("Reopened. Revise the proposal and resubmit when ready.", "success")
     return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#proposal")
 
@@ -2727,6 +3054,8 @@ def create_flag():
             clause_id=payload.get("clause_id"),
             notes=f"flag_type={flag_type}; {flag_notes[:100]}",
         )
+        if new_flag.get("id"):
+            _notify_flag_event("created", {**payload, **new_flag}, flag_notes)
         return jsonify({"ok": True, "message": "Flagged for revision.", "flag_id": new_flag.get("id")})
     except Exception as e:
         print(f"[flags] ERROR creating flag: {e}")
@@ -2758,6 +3087,8 @@ def add_flag_comment(flag_id: str):
         log_audit_event(action="flag_in_discussion", clause_id=flag.get("clause_id"),
                         field_changed="status", old_value="open", new_value="in_review",
                         notes=f"flag_id={flag_id}; first comment")
+    if flag:
+        _notify_flag_event("comment", {**flag, **bump}, comment)
 
     return redirect(url_for("admin_flag_detail", flag_id=flag_id) + "#comments")
 

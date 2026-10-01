@@ -1,0 +1,44 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">Outbox <span class="pill stale" style="margin-left:8px;">DEV only</span></span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <p class="muted">Every email the sandbox would have sent. Nothing here left this machine: the DEV mail backend writes to <code>dev/mail/</code> instead of a mail server.</p>
+  <form method="post" action="{{ url_for('dev_mail_clear') }}" style="margin-top:8px;">
+    <button type="submit" style="font-size:0.82rem; padding:6px 14px;">Clear outbox</button>
+  </form>
+</div>
+
+{% if message %}
+<div class="panel">
+  <h2>{{ message.subject }}</h2>
+  <p class="muted">To <strong>{{ message.to }}</strong> · {{ message.sent_at[:19].replace('T',' ') }} UTC · kind <code>{{ message.kind }}</code>{% if message.related_id %} · <code>{{ message.related_id }}</code>{% endif %}</p>
+  <pre style="white-space:pre-wrap; font: inherit; margin-top:12px; padding:12px; background:var(--surface-2); border-radius:8px;">{{ message.text }}</pre>
+  <p style="margin-top:10px;"><a href="{{ url_for('dev_mail_outbox') }}">&larr; All messages</a></p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>{{ items | length }} message{% if items | length != 1 %}s{% endif %}</h2>
+  <table class="result-table" style="margin-top:12px;">
+    <thead><tr><th>When (UTC)</th><th>To</th><th>Subject</th><th>Kind</th></tr></thead>
+    <tbody>
+    {% for m in items %}
+      <tr>
+        <td class="clause-meta">{{ m.sent_at[:19].replace('T',' ') }}</td>
+        <td>{{ m.to }}</td>
+        <td><a href="{{ url_for('dev_mail_view', item_id=m.id) }}">{{ m.subject }}</a></td>
+        <td><code>{{ m.kind }}</code></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">Nothing captured yet. Create or comment on a flag, or use Forgot password on the sign-in page.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

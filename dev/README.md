@@ -50,6 +50,16 @@ Other commands:
 ./dev.sh down    # stop containers (the local database persists in a Docker volume)
 ```
 
+## Email in DEV
+
+`dev.sh run` sets `MAIL_BACKEND=file`, so every email the console would send is
+written to `dev/mail/` and listed on the **Outbox** page in the sidebar (DEV only).
+Nothing leaves the machine. Every copied account has `<username>@plca.dev` as its
+email, so **Forgot your password?** on the sign-in page and the flag notifications
+can be exercised end to end: request a reset for `dev-member` (or
+`dev-member@plca.dev`), open the Outbox, follow the link. Comment on a flag as one
+account and watch the other participants' emails appear.
+
 ## What "same connection points" means here
 
 | Connection | Production | DEV |

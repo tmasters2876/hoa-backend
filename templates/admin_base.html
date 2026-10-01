@@ -1012,6 +1012,17 @@
           </a>
           {% endif %}
 
+          {% if dev_mode and mail_enabled %}
+          <a href="{{ url_for('dev_mail_outbox') }}"
+             class="nav-item {% if request.endpoint and request.endpoint.startswith('dev_mail') %}active{% endif %}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/>
+              <path d="M1.5 4.5l6.5 4.5 6.5-4.5"/>
+            </svg>
+            Outbox <span class="pill stale" style="margin-left:6px; font-size:0.68rem;">DEV</span>
+          </a>
+          {% endif %}
+
           <a href="{{ url_for('admin_users') }}"
              class="nav-item {% if request.endpoint == 'admin_users' %}active{% endif %}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">

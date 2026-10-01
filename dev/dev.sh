@@ -71,6 +71,8 @@ case "$cmd" in
     [ -f "$ENV_DEV" ] || write_env_dev
     set -a; . "$ENV_DEV"; set +a
     export HOA_ENV=dev PORT="$PORT"
+    # DEV email: captured to dev/mail/ and shown on the console's Outbox page; nothing is sent.
+    export MAIL_BACKEND="${MAIL_BACKEND:-file}" HOA_BASE_URL="${HOA_BASE_URL:-http://localhost:$PORT}"
     case "$SUPABASE_URL" in
       *localhost*|*127.0.0.1*) ;;
       *) echo "REFUSING to run: SUPABASE_URL is not local ($SUPABASE_URL)" >&2; exit 1 ;;

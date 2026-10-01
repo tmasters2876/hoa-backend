@@ -53,6 +53,10 @@
           <input id="new_password" name="password" type="password" autocomplete="new-password" required>
         </div>
         <div>
+          <label for="new_email">Email <span class="muted">(optional)</span></label>
+          <input id="new_email" name="email" type="email" autocomplete="off" placeholder="name@example.com">
+        </div>
+        <div>
           <label for="new_role">Role</label>
           <select id="new_role" name="role">
             <option value="member" selected>Member — browse clauses, submit changes</option>
@@ -69,6 +73,26 @@
   </div>
 
   <div class="col-stack">
+
+    <div class="panel">
+      <h2>Email &amp; Notifications</h2>
+      {% if mail_enabled %}
+      <p class="muted">With an email on your account you can reset a forgotten password from the sign-in page, and the console can tell you when a flag you are part of moves.</p>
+      {% else %}
+      <p class="muted">Email is not switched on for this console yet. Your address is kept so it is ready when it is.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('set_my_email') }}" class="reset-pw-form" autocomplete="off" style="border-top:none; padding-top:0;">
+        <div>
+          <label for="my_email">Email</label>
+          <input id="my_email" name="email" type="email" value="{{ me.email or '' }}" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.86rem;">
+          <input type="checkbox" name="notify_flags" value="1" {% if me.notify_flags is not defined or me.notify_flags %}checked{% endif %}>
+          Email me about flag activity (new flags, comments on my flags, Board steps)
+        </label>
+        <div><button type="submit" style="font-size:0.82rem; padding:6px 14px;">Save</button></div>
+      </form>
+    </div>
 
     <details class="panel collapsible-panel">
       <summary>Change My Password</summary>
@@ -105,6 +129,7 @@
         <thead>
           <tr>
             <th>Username</th>
+            <th>Email</th>
             <th>Status</th>
             <th>Created</th>
             <th>Last Login</th>
@@ -127,6 +152,13 @@
                 {% elif user.role == 'board' %}
                   <span class="pill ok" style="font-size: 0.76rem; margin-left: 6px; vertical-align: middle;">Board</span>
                 {% endif %}
+              </td>
+              <td>
+                <form data-set-email action="{{ url_for('set_user_email', user_id=user.id) }}" style="display:flex; gap:4px; align-items:center;">
+                  <input type="email" name="email" value="{{ user.email or '' }}" placeholder="—" style="font-size:0.82rem; padding:4px 6px; width:170px;">
+                  <button type="submit" style="font-size:0.78rem; padding:4px 8px;">Save</button>
+                </form>
+                <div class="inline-feedback" style="font-size:0.76rem;"></div>
               </td>
               <td>
                 {% if user.is_active %}
@@ -185,7 +217,7 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="5" class="muted">No users found.</td></tr>
+            <tr><td colspan="6" class="muted">No users found.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -250,6 +282,19 @@
 
 <script>
 (function () {
+  document.addEventListener('submit', function (e) {
+    var ef = e.target;
+    if (ef.hasAttribute && ef.hasAttribute('data-set-email')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var fb = ef.parentElement.querySelector('.inline-feedback');
+      fetch(ef.action, { method: 'POST', body: new FormData(ef), credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (fb) { fb.textContent = d.message; fb.style.color = d.ok ? 'var(--accent)' : 'var(--danger)'; } })
+        .catch(function () { if (fb) { fb.textContent = 'Request failed.'; fb.style.color = 'var(--danger)'; } });
+      return;
+    }
+  }, true);
   document.addEventListener('submit', function (e) {
     var form = e.target;
 

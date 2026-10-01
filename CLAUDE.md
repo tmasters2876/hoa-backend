@@ -39,6 +39,7 @@ This repo powers two production services for Plantation Lakes Community Associat
 | Chat model | GPT-4o (via ask_gpt.py) |
 | Auth | bcrypt (rounds=12) + Flask sessions |
 | PDF verification | pdfplumber + rapidfuzz |
+| Email | `mailer.py` — off / file (DEV outbox) / SMTP (`MAIL_BACKEND`), see Email below |
 | Hosting | Render (two services) |
 | Version control | GitHub |
 
@@ -52,6 +53,7 @@ hoa-backend/
 ├── admin_app.py         — admin console (~1963 lines)
 ├── ask_gpt.py           — HOA answer logic (full-corpus GPT-4o approach)
 ├── services.py          — shared Supabase + OpenAI clients
+├── mailer.py            — outbound email: off | file (dev/mail outbox) | smtp; logs every attempt to email_log
 ├── requirements.txt
 ├── render.yaml          — Render deployment config
 ├── CLAUDE.md
@@ -61,7 +63,10 @@ hoa-backend/
     ├── admin_base.html
     ├── admin_index.html          (includes the Help & Reference panel — keep in sync with features)
     ├── admin_guide.html          (renders MEMBER_WORKFLOW.md; mermaid ELK renderer + workflow-lane tints)
-    ├── admin_login.html
+    ├── admin_login.html          (Forgot your password? link when email is on)
+    ├── admin_forgot.html         (request a reset link by username or email)
+    ├── admin_reset.html          (choose a new password from a one-hour link)
+    ├── admin_dev_mail.html       (DEV-only Outbox: every email the sandbox would have sent)
     ├── admin_users.html
     ├── admin_pending.html        (Live Queue + History tabs)
     ├── admin_audit.html
@@ -155,7 +160,9 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 | 9 | Builders Guidelines |
 
 ### Other tables
-- `admin_users` — `id`, `username`, `password_hash` (bcrypt rounds=12), `is_active`, `must_change_password`, `role` ('superuser'|'board'|'member'; `is_approver` is a deprecated mirror)
+- `admin_users` — `id`, `username`, `password_hash` (bcrypt rounds=12), `is_active`, `must_change_password`, `role` ('superuser'|'board'|'member'; `is_approver` is a deprecated mirror), `email` (unique, nullable), `notify_flags` (flag-activity emails on/off; sql/005_email.sql)
+- `password_resets` — one-hour reset links: `user_id`, `token_hash` (SHA-256; the token itself is never stored), `expires_at`, `used_at`, `requested_ip` (sql/005)
+- `email_log` — every email sent/failed/skipped: `to_address`, `subject`, `kind`, `related_id`, `status`, `error` (sql/005)
 - `pending_changes` — two-person approval workflow; fields: `clause_id`, `submitted_by`, `action` ('edit'|'add'|'delete'), `proposed_changes` (jsonb), `original_values` (jsonb), `status`, `reviewed_by`
 - `clause_audit_log` — append-only, every clause action recorded, no deletes ever
 - `user_activity_log` — login/logout/action tracking with real IPs
@@ -215,7 +222,20 @@ SUPABASE_SERVICE_ROLE_KEY
 SECRET_KEY                 (Flask session encryption — required, no default)
 OPENAI_EMBEDDING_MODEL     (default: text-embedding-ada-002)
 HOA_ENV                    (unset in production; "dev" = local sandbox, see dev/README.md)
+MAIL_BACKEND               (default off; "file" = DEV outbox in dev/mail; "smtp" = real sending)
+SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD / SMTP_FROM / SMTP_TLS   (only for MAIL_BACKEND=smtp)
+HOA_BASE_URL               (absolute URL used in emailed links; defaults to the request host)
 ```
+
+### Email (branch email-notifications, Oct 2026 — DEV only until sql/005 runs in prod and SMTP is chosen)
+
+`mailer.send_email()` is the single door; everything it does is recorded in `email_log`. With `MAIL_BACKEND` unset the console behaves exactly as before: no Forgot link, no emails, Account keeps addresses for later.
+
+- **Forgot password** (`/forgot`, `/reset/<token>`): by username or email, same reply either way, 5 requests per 15 minutes per identifier+IP, one-hour single-use link, hash-only storage; a reset clears `must_change_password` and signs the user out everywhere.
+- **Account email** (`POST /admin/users/me/email`, any role; `POST /admin/users/<id>/set-email`, superuser): audited as `user_email_set`.
+- **Flag notifications** (`_notify_flag_event`, routing in `notification_recipients`, unit-tested): new flag → everyone with an email; submitted/recalled → Board-and-up plus the thread; comment/proposal/decision/close/reopen → the thread (flagger + commenters). Never the actor; `notify_flags=false` opts out. Sent on a thread in production, synchronously under TESTING/`MAIL_SYNC=1`.
+- **DEV Outbox** (`/admin/dev/mail`): only when `HOA_ENV=dev` and `MAIL_BACKEND=file`; `dev.sh run` sets both. Every DEV account has `<username>@plca.dev`.
+- Tests: `tests/test_email.py`.
 
 ---
 
@@ -303,7 +323,8 @@ Then: `rm /tmp/gen_hash.py`
 | sql/003_board_review.sql | Applied in prod (2026-09-24, verified via information_schema) and in the DEV stack | adds awaiting_board status + proposal/submission/decision columns |
 | sql/004_committee_close.sql | Applied in prod (2026-09-25) and in the DEV stack | adds the closed_committee status |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
-| MFA/TOTP | On hold | Use pyotp + qrcode; make optional not mandatory |
+| sql/005_email.sql | Applied in the DEV stack only (2026-10-01) | email + notify_flags on admin_users, password_resets, email_log; run in prod when the email-notifications branch merges, then set MAIL_BACKEND=smtp + SMTP_* in Render |
+| MFA | On hold | Decision pending: Supabase Auth (GoTrue already in the stack; TOTP + email OTP) vs an external IdP (Entra/Google via OIDC). Either sits in front of the existing admin_users roles. pyotp-only TOTP remains the fallback |
 
 ---
 
