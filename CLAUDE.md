@@ -323,7 +323,7 @@ Then: `rm /tmp/gen_hash.py`
 | sql/003_board_review.sql | Applied in prod (2026-09-24, verified via information_schema) and in the DEV stack | adds awaiting_board status + proposal/submission/decision columns |
 | sql/004_committee_close.sql | Applied in prod (2026-09-25) and in the DEV stack | adds the closed_committee status |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
-| sql/005_email.sql | Applied in the DEV stack only (2026-10-01) | email + notify_flags on admin_users, password_resets, email_log; run in prod when the email-notifications branch merges, then set MAIL_BACKEND=smtp + SMTP_* in Render |
+| sql/005_email.sql | Applied in the DEV stack only (2026-10-01) | email + notify_flags on admin_users, password_resets, email_log; run in prod when the email-notifications branch merges, then set MAIL_BACKEND=smtp + SMTP_* in Render. **Sender chosen 2026-10-01: Gmail SMTP**, account `notification.pladmin@gmail.com`, display name `PLA_Notification`, smtp.gmail.com:587 STARTTLS with a Google App Password (never the account password) |
 | MFA | On hold | Decision pending: Supabase Auth (GoTrue already in the stack; TOTP + email OTP) vs an external IdP (Entra/Google via OIDC). Either sits in front of the existing admin_users roles. pyotp-only TOTP remains the fallback |
 
 ---
