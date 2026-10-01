@@ -7,7 +7,7 @@ Email (sql/005_email.sql, mailer.py):
   accounts get the same message and no email.
 - Reset: bad or expired or used token refused; good token sets the hash, clears
   must_change_password, marks the token used.
-- Notifications: pure routing per event; the actor is never emailed; opt-out
+- Notifications: pure routing per event; the actor gets a copy as a receipt; opt-out
   respected; each lifecycle route sends.
 - Account email: any user sets their own; superuser sets others; members cannot.
 """
@@ -215,21 +215,22 @@ def names(rows):
     return sorted(u["username"] for u in rows)
 
 
-def test_new_flag_goes_to_everyone_but_the_actor_and_opt_outs():
-    assert names(notification_recipients("created", {"alice"}, USERS, "alice")) == ["bob", "carol"]
+def test_new_flag_goes_to_everyone_including_the_actor_but_not_opt_outs():
+    assert names(notification_recipients("created", {"alice"}, USERS, "alice")) == ["alice", "bob", "carol"]
 
 
 def test_comments_and_closures_go_to_the_thread_only():
     parts = {"alice", "bob"}
-    assert names(notification_recipients("comment", parts, USERS, "bob")) == ["alice"]
-    assert names(notification_recipients("closed", parts, USERS, "carol")) == ["alice", "bob"]
-    assert names(notification_recipients("reopened", {"alice"}, USERS, "alice")) == []
+    assert names(notification_recipients("comment", parts, USERS, "bob")) == ["alice", "bob"]
+    assert names(notification_recipients("closed", parts, USERS, "carol")) == ["alice", "bob", "carol"]   # the actor gets a receipt
+    assert names(notification_recipients("reopened", {"alice"}, USERS, "alice")) == ["alice"]
+    assert names(notification_recipients("reopened", {"alice"}, USERS, "dave")) == ["alice"]            # dave opted out
 
 
 def test_board_steps_go_to_board_and_thread():
-    assert names(notification_recipients("submitted", {"alice"}, USERS, "alice")) == ["carol"]   # dave opted out
-    assert names(notification_recipients("recalled", {"alice", "bob"}, USERS, "carol")) == ["alice", "bob"]
-    assert names(notification_recipients("decided", {"alice"}, USERS, "carol")) == ["alice"]
+    assert names(notification_recipients("submitted", {"alice"}, USERS, "alice")) == ["alice", "carol"]   # dave opted out
+    assert names(notification_recipients("recalled", {"alice", "bob"}, USERS, "carol")) == ["alice", "bob", "carol"]
+    assert names(notification_recipients("decided", {"alice"}, USERS, "carol")) == ["alice", "carol"]
 
 
 # ── lifecycle routes send ────────────────────────────────────────────────────
@@ -255,9 +256,9 @@ def test_comment_emails_the_other_participants_with_a_link(client, sb, mail_on, 
         s, l = as_role("member", "bob")
         with s, l:
             client.post(f"/admin/flags/{FID}/comment", data={"comment": "Let's keep the caliper rule."})
-    assert sent.call_count == 1
-    to, subject, body = sent.call_args.args[:3]
-    assert to == "a@x" and subject == "New comment: DECL_26_03"
+    assert sorted(c.args[0] for c in sent.call_args_list) == ["a@x", "b@x"]   # alice (flagger) and bob (actor)
+    to, subject, body = [c.args for c in sent.call_args_list if c.args[0] == "a@x"][0][:3]
+    assert subject == "New comment: DECL_26_03"
     assert "bob commented on DECL_26_03" in body and "Status now: In Discussion" in body
     assert "Let's keep the caliper rule." in body and f"http://console.test/admin/flags/{FID}" in body
     assert sent.call_args.kwargs == {"kind": "flag_comment", "related_id": FID}
@@ -271,7 +272,7 @@ def test_submit_emails_the_board(client, sb, mail_on, sent):
         s, l = as_role("member", "alice")
         with s, l:
             client.post(f"/admin/flags/{FID}/submit")
-    assert [c.args[0] for c in sent.call_args_list] == ["b@x"]
+    assert sorted(c.args[0] for c in sent.call_args_list) == ["a@x", "b@x"]
     assert sent.call_args.args[1] == "Sent to the Board: DECL_26_03"
 
 
@@ -285,7 +286,7 @@ def test_create_flag_emails_everyone_else(client, sb, mail_on, sent):
         with s, l:
             r = client.post("/admin/flags", data={"flag_type": "clause", "clause_id": "DECL_26_03", "flag_notes": "Trees."})
     assert r.get_json()["ok"]
-    assert [c.args[0] for c in sent.call_args_list] == ["b@x"]
+    assert sorted(c.args[0] for c in sent.call_args_list) == ["a@x", "b@x"]
     assert sent.call_args.args[1] == "New revision flag: DECL_26_03" and "Trees." in sent.call_args.args[2]
 
 

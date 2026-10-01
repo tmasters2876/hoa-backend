@@ -2563,14 +2563,16 @@ def notification_recipients(event: str, participants: set[str], users: list[dict
     created              → everyone (the committee hears about new work)
     submitted / recalled → Board-and-up, plus the people already in the thread
     everything else      → the people in the thread (flagger + commenters)
-    Never the person who did it; never anyone who switched notifications off."""
+    The person who acted is included too, as a receipt (owner decision, Oct 2026).
+    Never anyone who switched notifications off."""
     out = []
     for u in users:
         if not u.get("email") or not u.get("is_active", True) or not u.get("notify_flags", True):
             continue
-        if actor and u.get("username") == actor:
-            continue
         name, rank = u.get("username"), _role_rank(u.get("role"))
+        if name == actor:                      # the actor always gets the receipt
+            out.append(u)
+            continue
         if event == "created":
             out.append(u)
         elif event in ("submitted", "recalled"):

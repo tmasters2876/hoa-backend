@@ -233,7 +233,7 @@ HOA_BASE_URL               (absolute URL used in emailed links; defaults to the 
 
 - **Forgot password** (`/forgot`, `/reset/<token>`): by username or email, same reply either way, 5 requests per 15 minutes per identifier+IP, one-hour single-use link, hash-only storage; a reset clears `must_change_password` and signs the user out everywhere.
 - **Account email** (`POST /admin/users/me/email`, any role; `POST /admin/users/<id>/set-email`, superuser): audited as `user_email_set`.
-- **Flag notifications** (`_notify_flag_event`, routing in `notification_recipients`, unit-tested): new flag → everyone with an email; submitted/recalled → Board-and-up plus the thread; comment/proposal/decision/close/reopen → the thread (flagger + commenters). Never the actor; `notify_flags=false` opts out. Sent on a thread in production, synchronously under TESTING/`MAIL_SYNC=1`.
+- **Flag notifications** (`_notify_flag_event`, routing in `notification_recipients`, unit-tested): new flag → everyone with an email; submitted/recalled → Board-and-up plus the thread; comment/proposal/decision/close/reopen → the thread (flagger + commenters). The actor gets a copy too (receipt; owner decision 2026-10-01); `notify_flags=false` opts out. Sent on a thread in production, synchronously under TESTING/`MAIL_SYNC=1`.
 - **DEV Outbox** (`/admin/dev/mail`): only when `HOA_ENV=dev` and `MAIL_BACKEND=file`; `dev.sh run` sets both. Every DEV account has `<username>@plca.dev`.
 - Tests: `tests/test_email.py`.
 
