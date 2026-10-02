@@ -227,9 +227,9 @@ SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD / SMTP_FROM / SMTP_TLS   (only
 HOA_BASE_URL               (absolute URL used in emailed links; defaults to the request host)
 ```
 
-### Email (branch email-notifications, Oct 2026 — DEV only until sql/005 runs in prod and SMTP is chosen)
+### Email (merged to main 2026-10-01; sql/005 applied in prod; Gmail SMTP via Render env vars)
 
-`mailer.send_email()` is the single door; everything it does is recorded in `email_log`. With `MAIL_BACKEND` unset the console behaves exactly as before: no Forgot link, no emails, Account keeps addresses for later.
+`mailer.send_email()` is the single door; everything it does is recorded in `email_log`. With `MAIL_BACKEND` unset the console behaves exactly as before: no Forgot link, no emails, Account keeps addresses for later. Production has `MAIL_BACKEND=smtp`; the first prod test is the owner setting an email under Account and using Forgot password, then reading `email_log`.
 
 - **Forgot password** (`/forgot`, `/reset/<token>`): by username or email, same reply either way, 5 requests per 15 minutes per identifier+IP, one-hour single-use link, hash-only storage; a reset clears `must_change_password` and signs the user out everywhere.
 - **Account email** (`POST /admin/users/me/email`, any role; `POST /admin/users/<id>/set-email`, superuser): audited as `user_email_set`.
@@ -323,7 +323,7 @@ Then: `rm /tmp/gen_hash.py`
 | sql/003_board_review.sql | Applied in prod (2026-09-24, verified via information_schema) and in the DEV stack | adds awaiting_board status + proposal/submission/decision columns |
 | sql/004_committee_close.sql | Applied in prod (2026-09-25) and in the DEV stack | adds the closed_committee status |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
-| sql/005_email.sql | Applied in the DEV stack only (2026-10-01) | email + notify_flags on admin_users, password_resets, email_log; run in prod when the email-notifications branch merges, then set MAIL_BACKEND=smtp + SMTP_* in Render. **Sender chosen 2026-10-01: Gmail SMTP**, account `notification.pladmin@gmail.com`, display name `PLA_Notification`, smtp.gmail.com:587 STARTTLS with a Google App Password (never the account password) |
+| sql/005_email.sql | Applied in prod and DEV (2026-10-01, verified via the API) | email + notify_flags on admin_users, password_resets, email_log. email-notifications merged to main 2026-10-01; MAIL_BACKEND=smtp + SMTP_* set in Render by the owner. **Sender chosen 2026-10-01: Gmail SMTP**, account `notification.pladmin@gmail.com`, display name `PLA_Notification`, smtp.gmail.com:587 STARTTLS with a Google App Password (never the account password) |
 | MFA | On hold | Decision pending: Supabase Auth (GoTrue already in the stack; TOTP + email OTP) vs an external IdP (Entra/Google via OIDC). Either sits in front of the existing admin_users roles. pyotp-only TOTP remains the fallback |
 
 ---
