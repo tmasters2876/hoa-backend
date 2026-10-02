@@ -203,11 +203,12 @@ def test_reset_validates_password_fields(client, sb):
 # ── notification routing (pure) ──────────────────────────────────────────────
 
 USERS = [
-    {"username": "alice", "email": "a@x", "role": "member", "notify_flags": True},
-    {"username": "bob", "email": "b@x", "role": "member", "notify_flags": True},
-    {"username": "carol", "email": "c@x", "role": "board", "notify_flags": True},
-    {"username": "dave", "email": "d@x", "role": "superuser", "notify_flags": False},
-    {"username": "erin", "email": None, "role": "member", "notify_flags": True},
+    {"username": "alice", "email": "a@x", "role": "member", "notify_flags": True, "notify_board": True},
+    {"username": "bob", "email": "b@x", "role": "member", "notify_flags": True, "notify_board": True},
+    {"username": "carol", "email": "c@x", "role": "board", "notify_flags": True, "notify_board": True},
+    {"username": "dave", "email": "d@x", "role": "superuser", "notify_flags": False, "notify_board": True},   # Board steps only
+    {"username": "erin", "email": None, "role": "member", "notify_flags": True, "notify_board": True},
+    {"username": "fay", "email": "f@x", "role": "board", "notify_flags": True, "notify_board": False},       # thread only, no queue mail
 ]
 
 
@@ -216,7 +217,7 @@ def names(rows):
 
 
 def test_new_flag_goes_to_everyone_including_the_actor_but_not_opt_outs():
-    assert names(notification_recipients("created", {"alice"}, USERS, "alice")) == ["alice", "bob", "carol"]
+    assert names(notification_recipients("created", {"alice"}, USERS, "alice")) == ["alice", "bob", "carol", "fay"]
 
 
 def test_comments_and_closures_go_to_the_thread_only():
@@ -224,13 +225,17 @@ def test_comments_and_closures_go_to_the_thread_only():
     assert names(notification_recipients("comment", parts, USERS, "bob")) == ["alice", "bob"]
     assert names(notification_recipients("closed", parts, USERS, "carol")) == ["alice", "bob", "carol"]   # the actor gets a receipt
     assert names(notification_recipients("reopened", {"alice"}, USERS, "alice")) == ["alice"]
-    assert names(notification_recipients("reopened", {"alice"}, USERS, "dave")) == ["alice"]            # dave opted out
+    assert names(notification_recipients("reopened", {"alice"}, USERS, "dave")) == ["alice"]            # dave: flag activity off
 
 
-def test_board_steps_go_to_board_and_thread():
-    assert names(notification_recipients("submitted", {"alice"}, USERS, "alice")) == ["alice", "carol"]   # dave opted out
-    assert names(notification_recipients("recalled", {"alice", "bob"}, USERS, "carol")) == ["alice", "bob", "carol"]
-    assert names(notification_recipients("decided", {"alice"}, USERS, "carol")) == ["alice", "carol"]
+def test_board_steps_go_to_board_with_board_switch_and_thread_with_flag_switch():
+    # dave has flag activity off but Board steps on → hears about the queue only
+    # fay is Board but switched Board steps off → hears only if in the thread
+    assert names(notification_recipients("submitted", {"alice"}, USERS, "alice")) == ["alice", "carol", "dave"]
+    assert names(notification_recipients("recalled", {"alice", "bob"}, USERS, "carol")) == ["alice", "bob", "carol", "dave"]
+    assert names(notification_recipients("submitted", {"fay"}, USERS, "alice")) == ["alice", "carol", "dave", "fay"]
+    assert names(notification_recipients("decided", {"alice"}, USERS, "carol")) == ["alice", "carol"]   # a decision is flag activity, not a queue step
+    assert names(notification_recipients("decided", {"alice"}, USERS, "dave")) == ["alice"]            # dave's flag activity is off, even as actor
 
 
 # ── lifecycle routes send ────────────────────────────────────────────────────
@@ -243,8 +248,8 @@ def _flag(status="in_review", **over):
 
 
 def _users_rows():
-    return [{"username": "alice", "email": "a@x", "role": "member", "is_active": True, "notify_flags": True},
-            {"username": "bob", "email": "b@x", "role": "board", "is_active": True, "notify_flags": True}]
+    return [{"username": "alice", "email": "a@x", "role": "member", "is_active": True, "notify_flags": True, "notify_board": True},
+            {"username": "bob", "email": "b@x", "role": "board", "is_active": True, "notify_flags": True, "notify_board": True}]
 
 
 def test_comment_emails_the_other_participants_with_a_link(client, sb, mail_on, sent):
@@ -307,8 +312,17 @@ def test_user_sets_own_email_and_opt_out(client, sb):
         with s, l:
             r = client.post("/admin/users/me/email", data={"email": "Alice@Example.com"})
     assert r.status_code == 302
-    assert sb.update.call_args.args[0] == {"email": "alice@example.com", "notify_flags": False}
+    assert sb.update.call_args.args[0] == {"email": "alice@example.com", "notify_flags": False, "notify_board": False}
     assert audit.call_args.kwargs["action"] == "user_email_set"
+
+
+def test_user_can_keep_board_steps_and_drop_flag_activity(client, sb):
+    with patch("admin_app.log_audit_event") as audit, patch("admin_app.flash") as fl:
+        s, l = as_role("board")
+        with s, l:
+            client.post("/admin/users/me/email", data={"email": "a@x.org", "notify_board": "1"})
+    assert sb.update.call_args.args[0] == {"email": "a@x.org", "notify_flags": False, "notify_board": True}
+    assert "board steps on" in audit.call_args.kwargs["notes"] and "Board steps" in fl.call_args.args[0]
 
 
 def test_bad_email_is_refused(client, sb):
@@ -345,7 +359,18 @@ def test_superuser_can_switch_another_users_flag_emails_off(client, sb):
             r = client.post("/admin/users/other-id/set-email", data={"email": "bob@x.org", "notify_flags": "0"})
     assert r.get_json()["ok"] and "Flag emails off" in r.get_json()["message"]
     assert sb.update.call_args.args[0] == {"email": "bob@x.org", "notify_flags": False}
-    assert "notifications off" in audit.call_args.kwargs["notes"]
+    assert "flag activity off" in audit.call_args.kwargs["notes"]
+
+
+def test_superuser_sets_both_switches(client, sb):
+    sb.execute.return_value = MagicMock(data=[{"username": "bob"}])
+    with patch("admin_app.log_audit_event") as audit:
+        s, l = as_role("superuser")
+        with s, l:
+            r = client.post("/admin/users/other-id/set-email", data={"email": "bob@x.org", "notify_flags": "0", "notify_board": "1"})
+    assert "Flag emails off. Board emails on." in r.get_json()["message"]
+    assert sb.update.call_args.args[0] == {"email": "bob@x.org", "notify_flags": False, "notify_board": True}
+    assert "board steps on" in audit.call_args.kwargs["notes"]
 
 
 def test_dev_outbox_is_dev_only(client, sb, monkeypatch):

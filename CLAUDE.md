@@ -160,7 +160,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 | 9 | Builders Guidelines |
 
 ### Other tables
-- `admin_users` — `id`, `username`, `password_hash` (bcrypt rounds=12), `is_active`, `must_change_password`, `role` ('superuser'|'board'|'member'; `is_approver` is a deprecated mirror), `email` (unique, nullable), `notify_flags` (flag-activity emails on/off; sql/005_email.sql)
+- `admin_users` — `id`, `username`, `password_hash` (bcrypt rounds=12), `is_active`, `must_change_password`, `role` ('superuser'|'board'|'member'; `is_approver` is a deprecated mirror), `email` (unique, nullable), `notify_flags` (flag-activity emails on/off; sql/005_email.sql), `notify_board` (Board-step emails on/off; sql/006_notify_board.sql)
 - `password_resets` — one-hour reset links: `user_id`, `token_hash` (SHA-256; the token itself is never stored), `expires_at`, `used_at`, `requested_ip` (sql/005)
 - `email_log` — every email sent/failed/skipped: `to_address`, `subject`, `kind`, `related_id`, `status`, `error` (sql/005)
 - `pending_changes` — two-person approval workflow; fields: `clause_id`, `submitted_by`, `action` ('edit'|'add'|'delete'), `proposed_changes` (jsonb), `original_values` (jsonb), `status`, `reviewed_by`
@@ -232,8 +232,8 @@ HOA_BASE_URL               (absolute URL used in emailed links; defaults to the 
 `mailer.send_email()` is the single door; everything it does is recorded in `email_log`. With `MAIL_BACKEND` unset the console behaves exactly as before: no Forgot link, no emails, Account keeps addresses for later. Production has `MAIL_BACKEND=smtp`; the first prod test is the owner setting an email under Account and using Forgot password, then reading `email_log`.
 
 - **Forgot password** (`/forgot`, `/reset/<token>`): by username or email, same reply either way, 5 requests per 15 minutes per identifier+IP, one-hour single-use link, hash-only storage; a reset clears `must_change_password` and signs the user out everywhere.
-- **Account email** (`POST /admin/users/me/email`, any role; `POST /admin/users/<id>/set-email`, superuser): audited as `user_email_set`.
-- **Flag notifications** (`_notify_flag_event`, routing in `notification_recipients`, unit-tested): new flag → everyone with an email; submitted/recalled → Board-and-up plus the thread; comment/proposal/decision/close/reopen → the thread (flagger + commenters). The actor gets a copy too (receipt; owner decision 2026-10-01); `notify_flags=false` opts out. Sent on a thread in production, synchronously under TESTING/`MAIL_SYNC=1`.
+- **Account email + two switches** (`POST /admin/users/me/email`, any role; `POST /admin/users/<id>/set-email`, superuser, with optional `notify_flags`/`notify_board` = "0"/"1"): audited as `user_email_set`.
+- **Flag notifications** (`_notify_flag_event`, routing in `notification_recipients`, unit-tested). Two switches per account: `notify_flags` (flag activity) and `notify_board` (Board steps). New flag → everyone with flag activity on; comment/proposal/decision/close/reopen → the thread (flagger + commenters) with flag activity on; submitted/recalled → Board-and-up with Board steps on, plus thread members with flag activity on. The actor gets a copy as a receipt under the same switches (owner decisions 2026-10-01/02). The Board members currently have flag activity off and Board steps on. Sent on a thread in production, synchronously under TESTING/`MAIL_SYNC=1`.
 - **DEV Outbox** (`/admin/dev/mail`): only when `HOA_ENV=dev` and `MAIL_BACKEND=file`; `dev.sh run` sets both. Every DEV account has `<username>@plca.dev`.
 - Tests: `tests/test_email.py`.
 
@@ -323,6 +323,7 @@ Then: `rm /tmp/gen_hash.py`
 | sql/003_board_review.sql | Applied in prod (2026-09-24, verified via information_schema) and in the DEV stack | adds awaiting_board status + proposal/submission/decision columns |
 | sql/004_committee_close.sql | Applied in prod (2026-09-25) and in the DEV stack | adds the closed_committee status |
 | Drop `is_approver` column | Pending | Deprecated mirror of `role`; drop after roles have been stable a few weeks |
+| sql/006_notify_board.sql | Applied in prod (MCP apply_migration) and DEV, 2026-10-02 | `notify_board` switch on admin_users; default true |
 | sql/005_email.sql | Applied in prod and DEV (2026-10-01, verified via the API) | email + notify_flags on admin_users, password_resets, email_log. email-notifications merged to main 2026-10-01; MAIL_BACKEND=smtp + SMTP_* set in Render by the owner. **Sender chosen 2026-10-01: Gmail SMTP**, account `notification.pladmin@gmail.com`, display name `PLA_Notification`, smtp.gmail.com:587 STARTTLS with a Google App Password (never the account password) |
 | MFA | On hold | Decision pending: Supabase Auth (GoTrue already in the stack; TOTP + email OTP) vs an external IdP (Entra/Google via OIDC). Either sits in front of the existing admin_users roles. pyotp-only TOTP remains the fallback |
 

@@ -88,7 +88,11 @@
         </div>
         <label style="display:flex; align-items:center; gap:8px; font-size:0.86rem;">
           <input type="checkbox" name="notify_flags" value="1" {% if me.notify_flags is not defined or me.notify_flags %}checked{% endif %}>
-          Email me about flag activity (new flags, comments on my flags, Board steps)
+          Email me about flag activity (new flags, and comments, proposals, decisions and closures on flags I am part of)
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.86rem;">
+          <input type="checkbox" name="notify_board" value="1" {% if me.notify_board is not defined or me.notify_board %}checked{% endif %}>
+          Email me about Board steps (a flag sent to the Board, or recalled){% if role == 'member' %} <span class="muted">— applies to Board accounts</span>{% endif %}
         </label>
         <div><button type="submit" style="font-size:0.82rem; padding:6px 14px;">Save</button></div>
       </form>
@@ -159,6 +163,10 @@
                   <label title="Email this person about flag activity" style="display:flex; align-items:center; gap:3px; font-size:0.76rem; white-space:nowrap;">
                     <input type="hidden" name="notify_flags" value="0">
                     <input type="checkbox" name="notify_flags" value="1" {% if user.notify_flags %}checked{% endif %}> flag emails
+                  </label>
+                  <label title="Email this person when a flag is sent to or recalled from the Board (Board accounts)" style="display:flex; align-items:center; gap:3px; font-size:0.76rem; white-space:nowrap;">
+                    <input type="hidden" name="notify_board" value="0">
+                    <input type="checkbox" name="notify_board" value="1" {% if user.notify_board %}checked{% endif %}> board emails
                   </label>
                   <button type="submit" style="font-size:0.78rem; padding:4px 8px;">Save</button>
                 </form>

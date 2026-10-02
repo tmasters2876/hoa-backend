@@ -58,7 +58,8 @@ Nothing leaves the machine. Every copied account has `<username>@plca.dev` as it
 email, so **Forgot your password?** on the sign-in page and the flag notifications
 can be exercised end to end: request a reset for `dev-member` (or
 `dev-member@plca.dev`), open the Outbox, follow the link. Comment on a flag as one
-account and watch the other participants' emails appear.
+account and watch the other participants' emails appear. Each account has two
+switches under Account: flag activity and Board steps.
 
 ## What "same connection points" means here
 

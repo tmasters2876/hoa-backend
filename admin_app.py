@@ -1413,7 +1413,7 @@ def admin_users():
         result = (
             supabase()
             .from_("admin_users")
-            .select("id,username,is_active,created_at,must_change_password,role,email,notify_flags")
+            .select("id,username,is_active,created_at,must_change_password,role,email,notify_flags,notify_board")
             .order("created_at")
             .execute()
         )
@@ -1527,7 +1527,7 @@ def _clean_email(raw: str) -> str | None:
 def _my_account() -> dict:
     """The signed-in user's own email + notification setting (any role)."""
     try:
-        rows = (supabase().from_("admin_users").select("id,username,email,notify_flags")
+        rows = (supabase().from_("admin_users").select("id,username,email,notify_flags,notify_board")
                 .eq("id", session.get("user_id")).limit(1).execute().data) or []
         return rows[0] if rows else {}
     except Exception:
@@ -1545,14 +1545,15 @@ def set_my_email():
         flash("That email address does not look right.", "error")
         return redirect(url_for("admin_users"))
     notify = bool(request.form.get("notify_flags"))
+    notify_board = bool(request.form.get("notify_board"))
     try:
-        supabase().from_("admin_users").update({"email": email, "notify_flags": notify}).eq("id", session.get("user_id")).execute()
+        supabase().from_("admin_users").update({"email": email, "notify_flags": notify, "notify_board": notify_board}).eq("id", session.get("user_id")).execute()
     except Exception as e:
         flash("That email address is already on another account." if "admin_users_email_key" in str(e) else f"Could not save: {e}", "error")
         return redirect(url_for("admin_users"))
     log_audit_event(action="user_email_set", new_value=email or "(cleared)",
-                    notes=f"own account; notifications {'on' if notify else 'off'}")
-    flash("Saved." + (" You will be emailed about flag activity." if (email and notify) else ""), "success")
+                    notes=f"own account; flag activity {'on' if notify else 'off'}; board steps {'on' if notify_board else 'off'}")
+    flash("Saved." + (" You will be emailed about flag activity." if (email and notify) else "") + (" You will be emailed about Board steps." if (email and notify_board and not notify) else ""), "success")
     return redirect(url_for("admin_users"))
 
 
@@ -1567,18 +1568,22 @@ def set_user_email(user_id: str):
     if not target.get("username"):
         return jsonify({"ok": False, "message": "User not found."})
     payload = {"email": email}
-    notify_raw = request.form.get("notify_flags")          # "1" / "0"; absent = leave as is
-    if notify_raw in ("0", "1"):
-        payload["notify_flags"] = notify_raw == "1"
+    for field in ("notify_flags", "notify_board"):          # "1" / "0"; absent = leave as is
+        raw = request.form.get(field)
+        if raw in ("0", "1"):
+            payload[field] = raw == "1"
     try:
         supabase().from_("admin_users").update(payload).eq("id", user_id).execute()
     except Exception as e:
         return jsonify({"ok": False, "message": "That email address is already on another account." if "admin_users_email_key" in str(e) else f"Could not save: {e}"})
-    note = f"user={target['username']}" + (f"; notifications {'on' if payload['notify_flags'] else 'off'}" if "notify_flags" in payload else "")
+    note = f"user={target['username']}" + (f"; flag activity {'on' if payload['notify_flags'] else 'off'}" if "notify_flags" in payload else "") \
+        + (f"; board steps {'on' if payload['notify_board'] else 'off'}" if "notify_board" in payload else "")
     log_audit_event(action="user_email_set", new_value=email or "(cleared)", notes=note)
     msg = f"Email {'set' if email else 'cleared'} for {target['username']}."
     if "notify_flags" in payload:
         msg += f" Flag emails {'on' if payload['notify_flags'] else 'off'}."
+    if "notify_board" in payload:
+        msg += f" Board emails {'on' if payload['notify_board'] else 'off'}."
     return jsonify({"ok": True, "message": msg})
 
 
@@ -2566,27 +2571,30 @@ FLAG_EVENTS = {
 }
 
 
+BOARD_STEP_EVENTS = ("submitted", "recalled")
+
+
 def notification_recipients(event: str, participants: set[str], users: list[dict], actor: str | None) -> list[dict]:
-    """users: active rows with username, email, role, notify_flags.
-    created              → everyone (the committee hears about new work)
-    submitted / recalled → Board-and-up, plus the people already in the thread
-    everything else      → the people in the thread (flagger + commenters)
-    The person who acted is included too, as a receipt (owner decision, Oct 2026).
-    Never anyone who switched notifications off."""
+    """users: active rows with username, email, role, notify_flags, notify_board.
+    Two switches per person (sql/005, sql/006):
+      notify_flags — flag activity: new flags (everyone), and comments / proposals /
+                     decisions / closes / reopens for the people in the thread
+      notify_board — Board steps: a flag sent to or recalled from the Board, for
+                     Board-and-up; thread members hear about those under notify_flags
+    The person who acted gets a copy as a receipt when either switch that applies is on."""
     out = []
     for u in users:
-        if not u.get("email") or not u.get("is_active", True) or not u.get("notify_flags", True):
+        if not u.get("email") or not u.get("is_active", True):
             continue
         name, rank = u.get("username"), _role_rank(u.get("role"))
-        if name == actor:                      # the actor always gets the receipt
-            out.append(u)
-            continue
-        if event == "created":
-            out.append(u)
-        elif event in ("submitted", "recalled"):
-            if rank >= ROLE_RANK["board"] or name in participants:
+        flags_on, board_on = u.get("notify_flags", True), u.get("notify_board", True)
+        if event in BOARD_STEP_EVENTS:
+            if (board_on and rank >= ROLE_RANK["board"]) or (flags_on and (name in participants or name == actor)):
                 out.append(u)
-        elif name in participants:
+            continue
+        if not flags_on:
+            continue
+        if event == "created" or name in participants or name == actor:
             out.append(u)
     return out
 
@@ -2616,7 +2624,7 @@ def _notify_flag_event(event: str, flag: dict | None, detail: str = "") -> None:
         actor = session.get("username")
         headline, verb = FLAG_EVENTS[event]
         status_label = FLAG_STATUS_LABELS.get(flag.get("status"), flag.get("status") or "")
-        users = supabase().from_("admin_users").select("username,email,role,is_active,notify_flags").eq("is_active", True).execute().data or []
+        users = supabase().from_("admin_users").select("username,email,role,is_active,notify_flags,notify_board").eq("is_active", True).execute().data or []
         recipients = notification_recipients(event, _flag_participants(flag), users, actor)
         if not recipients:
             return
@@ -2627,7 +2635,7 @@ def _notify_flag_event(event: str, flag: dict | None, detail: str = "") -> None:
                 + (f"\n{detail.strip()}\n" if detail and detail.strip() else "")
                 + f"\nOpen the flag: {link}\n\n"
                 "You get these because you have an email on your PLCA Console account. "
-                "Switch them off under Account.\n")
+                "Choose which ones under Account.\n")
         subject = f"{headline}: {title}"
         jobs = [(u["email"], subject, body, event, flag["id"]) for u in recipients]
 
