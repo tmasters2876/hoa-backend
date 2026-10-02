@@ -154,8 +154,12 @@
                 {% endif %}
               </td>
               <td>
-                <form data-set-email action="{{ url_for('set_user_email', user_id=user.id) }}" style="display:flex; gap:4px; align-items:center;">
+                <form data-set-email action="{{ url_for('set_user_email', user_id=user.id) }}" style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
                   <input type="email" name="email" value="{{ user.email or '' }}" placeholder="—" style="font-size:0.82rem; padding:4px 6px; width:170px;">
+                  <label title="Email this person about flag activity" style="display:flex; align-items:center; gap:3px; font-size:0.76rem; white-space:nowrap;">
+                    <input type="hidden" name="notify_flags" value="0">
+                    <input type="checkbox" name="notify_flags" value="1" {% if user.notify_flags %}checked{% endif %}> flag emails
+                  </label>
                   <button type="submit" style="font-size:0.78rem; padding:4px 8px;">Save</button>
                 </form>
                 <div class="inline-feedback" style="font-size:0.76rem;"></div>

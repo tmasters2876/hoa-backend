@@ -337,6 +337,17 @@ def test_superuser_sets_another_users_email(client, sb):
     assert sb.update.call_args.args[0] == {"email": "bob@x.org"}
 
 
+def test_superuser_can_switch_another_users_flag_emails_off(client, sb):
+    sb.execute.return_value = MagicMock(data=[{"username": "bob"}])
+    with patch("admin_app.log_audit_event") as audit:
+        s, l = as_role("superuser")
+        with s, l:
+            r = client.post("/admin/users/other-id/set-email", data={"email": "bob@x.org", "notify_flags": "0"})
+    assert r.get_json()["ok"] and "Flag emails off" in r.get_json()["message"]
+    assert sb.update.call_args.args[0] == {"email": "bob@x.org", "notify_flags": False}
+    assert "notifications off" in audit.call_args.kwargs["notes"]
+
+
 def test_dev_outbox_is_dev_only(client, sb, monkeypatch):
     monkeypatch.delenv("HOA_ENV", raising=False)
     with patch("admin_app.flash"):

@@ -1566,12 +1566,20 @@ def set_user_email(user_id: str):
     target = (supabase().from_("admin_users").select("username").eq("id", user_id).limit(1).execute().data or [{}])[0]
     if not target.get("username"):
         return jsonify({"ok": False, "message": "User not found."})
+    payload = {"email": email}
+    notify_raw = request.form.get("notify_flags")          # "1" / "0"; absent = leave as is
+    if notify_raw in ("0", "1"):
+        payload["notify_flags"] = notify_raw == "1"
     try:
-        supabase().from_("admin_users").update({"email": email}).eq("id", user_id).execute()
+        supabase().from_("admin_users").update(payload).eq("id", user_id).execute()
     except Exception as e:
         return jsonify({"ok": False, "message": "That email address is already on another account." if "admin_users_email_key" in str(e) else f"Could not save: {e}"})
-    log_audit_event(action="user_email_set", new_value=email or "(cleared)", notes=f"user={target['username']}")
-    return jsonify({"ok": True, "message": f"Email {'set' if email else 'cleared'} for {target['username']}."})
+    note = f"user={target['username']}" + (f"; notifications {'on' if payload['notify_flags'] else 'off'}" if "notify_flags" in payload else "")
+    log_audit_event(action="user_email_set", new_value=email or "(cleared)", notes=note)
+    msg = f"Email {'set' if email else 'cleared'} for {target['username']}."
+    if "notify_flags" in payload:
+        msg += f" Flag emails {'on' if payload['notify_flags'] else 'off'}."
+    return jsonify({"ok": True, "message": msg})
 
 
 # ── Forgot / reset password (by username or email) ────────────────────────────
