@@ -2,6 +2,7 @@ import csv
 import functools
 import hashlib
 import io
+import json
 import math
 import os
 import re
@@ -1102,6 +1103,35 @@ def delete_clause(clause_id: str):
         notes="delete",
     )
     flash("Deletion submitted for approval — a second superuser must approve before the clause is removed.", "success")
+    return redirect(url_for("admin_home"))
+
+
+@app.post("/admin/clauses/<clause_id>/accuracy-delete")
+@superuser_required
+def accuracy_delete_clause(clause_id: str):
+    """THE LAW, Accuracy clause (owner, Oct 2026): ingestion artifacts — duplicate
+    rows, table-of-contents stubs, OCR noise — are removed by the owner-as-developer
+    without a second approver. Nothing a resident could lose is involved: the text
+    either exists elsewhere in the database or was never a rule. Reason required;
+    the full row is written to the audit log before it goes."""
+    existing = fetch_clause(clause_id)
+    if not existing:
+        flash(f"Clause {clause_id} was not found.", "error")
+        return redirect(url_for("admin_home"))
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        flash("A reason is required for an accuracy deletion.", "error")
+        return redirect(url_for("admin_home"))
+    snapshot = {k: existing.get(k) for k in _CLAUSE_TRACKED_FIELDS}
+    log_audit_event(
+        action="accuracy_delete",
+        clause_id=existing.get("clause_id"),
+        record_id=clause_id,
+        old_value=json.dumps(snapshot, default=str),
+        notes=reason[:500],
+    )
+    supabase().from_("clauses").delete().eq("id", clause_id).execute()
+    flash(f"Removed {existing.get('clause_id')} (accuracy: {reason[:80]}).", "success")
     return redirect(url_for("admin_home"))
 
 

@@ -330,3 +330,42 @@ class TestApprovePendingRoute:
         # Flash must not claim self-approval
         flash_message = mock_flash.call_args[0][0]
         assert "self-approved" not in flash_message
+
+
+# ── Accuracy clause: artifact deletion by the owner-as-developer (Oct 2026) ────
+
+def test_accuracy_delete_requires_superuser_and_reason_and_audits_the_row():
+    from unittest.mock import MagicMock, patch
+    import admin_app
+    from admin_app import app
+    app.config["TESTING"] = True
+    sb = MagicMock()
+    for m in ("from_", "select", "eq", "limit", "delete", "insert", "update", "order", "range", "in_"):
+        getattr(sb, m).return_value = sb
+    row = {"id": "u1", "clause_id": "DECL_II_K", "clause_text": "CONDUCT OF MEETINGS ..... 4", "document": "ByLaws", "page": 2}
+    sb.execute.return_value = MagicMock(data=[row])
+
+    def sess(role):
+        data = {"logged_in": True, "username": "tmasters", "user_id": "x", "role": role}
+        s = MagicMock(); s.get.side_effect = lambda k, d=None: data.get(k, d)
+        return s
+    with app.test_client() as c:
+        # board cannot
+        with patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.session", sess("board")), \
+             patch("admin_app._load_current_user", return_value={"id": "x", "username": "b", "is_active": True, "role": "board"}), patch("admin_app.flash"):
+            r = c.post("/admin/clauses/u1/accuracy-delete", data={"reason": "dup"})
+            assert r.status_code == 302 and not sb.delete.called
+        # superuser without a reason: refused
+        with patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.session", sess("superuser")), \
+             patch("admin_app._load_current_user", return_value={"id": "x", "username": "tmasters", "is_active": True, "role": "superuser"}), patch("admin_app.flash") as fl:
+            r = c.post("/admin/clauses/u1/accuracy-delete", data={"reason": ""})
+            assert r.status_code == 302 and not sb.delete.called and "reason is required" in fl.call_args.args[0]
+        # superuser with a reason: audited then deleted
+        with patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.session", sess("superuser")), \
+             patch("admin_app._load_current_user", return_value={"id": "x", "username": "tmasters", "is_active": True, "role": "superuser"}), \
+             patch("admin_app.flash"), patch("admin_app.log_audit_event") as audit:
+            r = c.post("/admin/clauses/u1/accuracy-delete", data={"reason": "table-of-contents stub"})
+            assert r.status_code == 302 and sb.delete.called
+            kw = audit.call_args.kwargs
+            assert kw["action"] == "accuracy_delete" and kw["clause_id"] == "DECL_II_K" and "CONDUCT OF MEETINGS" in kw["old_value"]
+            assert kw["notes"] == "table-of-contents stub"
