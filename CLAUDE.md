@@ -190,6 +190,8 @@ The approval workflow protects the database from **changes**: new or revised rul
 
 Everyone else follows the process: the Board adds amendments that have been properly adopted; the committee revises the documents through flags; and the owner, when acting as a committee member, follows the committee process like anyone else.
 
+**No live clause in the approval queue (owner rule, 2026-10-03):** an approved clause must never have an open `pending_changes` row — a Reject there deletes it. Immediate-apply paths close their pending row in the same request; `plca db health` must pass after every programmatic write; before adding a route that touches `clauses`, read the approve/reject handlers first.
+
 **Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; member-facing surfaces obey the Final Approval clause (governance terms only, never internal mechanics); deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
 
 ## Authentication & User Roles
