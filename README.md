@@ -35,6 +35,12 @@ In **all member-facing language** — MEMBER_WORKFLOW.md, the in-console Guide, 
 
 What member-facing language must **never** expose is the tool's internal mechanics: which console role applies a change, how many approvers there are, reviewer identities on decided items, or any superuser/board tooling. The governance terms are stable; the mechanics behind them are expected to change without member-facing language needing to. Before September 2026 the clause went further and allowed only the bare phrase "final approval"; the owner amended it so the Guide can name the Board and the community vote.
 
+### The Accuracy clause (amended by the owner, October 2026)
+
+The approval workflow protects the database from **changes**: new or revised rules that the Board adopts after the committee → Board → attorney → community-vote path. It is not a gate on **capturing what already exists**. When a clause of the current, recorded governing documents is missing from the database, the owner — acting as the tool's developer, not as a committee member — adds it immediately, because it already governs the community and the search tool is wrong without it. These additions go through the console's add-clause route as the owner with self-approval, so they are audited like everything else, and the text is verified against the source page before it is sent. The `plca clauses` tool in `~/Projects/plca-revision` is the instrument for this.
+
+Everyone else follows the process: the Board adds amendments that have been properly adopted; the committee revises the documents through flags; and the owner, when acting as a committee member, follows the committee process like anyone else.
+
 ### Standing rules derived from the mandate
 
 - The `admin_users.role` column is the single source of truth for permissions. Enforcement is per-request.

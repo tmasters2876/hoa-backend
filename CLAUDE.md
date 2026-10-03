@@ -184,6 +184,12 @@ The tool has exactly two missions: **Revision** (support the Document Revision C
 
 **The Final Approval clause (amended Sept 2026):** in ALL member-facing language (MEMBER_WORKFLOW.md / the in-console Guide, the Help panel as non-superusers see it, My Submissions, any future member surface) the approval step is described in **governance terms only**: the committee proposes, the **HOA Board approves or rejects**, and a Board-approved proposal is **advanced to the community for the final vote**; rejections record the reason so the member can revise and resubmit. Canonical sequence: *Committee Review → Committee Proposal → Board Approval / Rejection → Community Vote*. Never expose the tool's internal mechanics — which console role applies a change, how many approvers, reviewer identities on decided items, or superuser/board tooling. (Until Sept 2026 the clause allowed only the bare phrase "final approval"; the owner amended it so the Guide can name the Board and the community vote.)
 
+### The Accuracy clause (amended by the owner, October 2026)
+
+The approval workflow protects the database from **changes**: new or revised rules that the Board adopts after the committee → Board → attorney → community-vote path. It is not a gate on **capturing what already exists**. When a clause of the current, recorded governing documents is missing from the database, the owner — acting as the tool's developer, not as a committee member — adds it immediately, because it already governs the community and the search tool is wrong without it. These additions go through the console's add-clause route as the owner with self-approval, so they are audited like everything else, and the text is verified against the source page before it is sent. The `plca clauses` tool in `~/Projects/plca-revision` is the instrument for this.
+
+Everyone else follows the process: the Board adds amendments that have been properly adopted; the committee revises the documents through flags; and the owner, when acting as a committee member, follows the committee process like anyone else.
+
 **Derived rules:** every new feature must serve Revision, Accuracy, or tool administration; no path may let a member-proposed change reach residents without superuser approval; member-facing surfaces obey the Final Approval clause (governance terms only, never internal mechanics); deliberation (flags/comments) stays append-only; every state-changing action is audit-logged; the Help & Reference panel ships updated with every user-visible change.
 
 ## Authentication & User Roles
