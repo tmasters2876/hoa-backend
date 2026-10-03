@@ -938,6 +938,16 @@ def create_clause():
         proposed_changes=proposed_for_log,
         original_values=None,
     )
+    if self_approve and (pending_result or {}).get("id"):
+        # The clause is already live; the pending row is the record of that, not a
+        # request. Leaving it "pending" would put a live clause in the approval queue,
+        # where a Reject would delete it.
+        supabase().from_("pending_changes").update({
+            "status": "approved",
+            "reviewed_by": session.get("username"),
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "review_notes": "self-approved on creation",
+        }).eq("id", pending_result["id"]).execute()
     verif = (pending_result or {}).get("verification") or {}
     v_status = verif.get("status", "skipped")
     v_score = verif.get("score", 0)

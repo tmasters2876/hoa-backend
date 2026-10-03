@@ -369,3 +369,26 @@ def test_accuracy_delete_requires_superuser_and_reason_and_audits_the_row():
             kw = audit.call_args.kwargs
             assert kw["action"] == "accuracy_delete" and kw["clause_id"] == "DECL_II_K" and "CONDUCT OF MEETINGS" in kw["old_value"]
             assert kw["notes"] == "table-of-contents stub"
+
+
+
+def test_self_approved_create_does_not_sit_in_the_pending_queue():
+    from unittest.mock import MagicMock, patch
+    from admin_app import app
+    app.config["TESTING"] = True
+    sb = MagicMock()
+    for m in ("from_", "select", "eq", "limit", "delete", "insert", "update", "order", "range", "in_"):
+        getattr(sb, m).return_value = sb
+    sb.execute.return_value = MagicMock(data=[{"id": "new-uuid"}])
+    data = {"logged_in": True, "username": "tmasters", "user_id": "x", "role": "superuser"}
+    sess = MagicMock(); sess.get.side_effect = lambda k, d=None: data.get(k, d)
+    form = {"clause_id": "DECL_TEST", "document": "Decl.pdf", "page": "5", "citation": "Page 5", "clause_text": "Some text.",
+            "plain_summary": "s", "link": "https://drive.google.com/file/d/abc/view", "tags": "A", "precedence_level": "2", "self_approve": "1"}
+    with app.test_client() as c, patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.session", sess), \
+         patch("admin_app._load_current_user", return_value={"id": "x", "username": "tmasters", "is_active": True, "role": "superuser"}), \
+         patch("admin_app.submit_pending_change", return_value={"id": "pend-1", "verification": {"status": "verified", "score": 99}}), \
+         patch("admin_app.log_audit_event"), patch("admin_app.flash"):
+        r = c.post("/admin/clauses", data=form)
+    assert r.status_code == 302
+    updates = [c.args[0] for c in sb.update.call_args_list]
+    assert any(u.get("status") == "approved" and u.get("review_notes") == "self-approved on creation" for u in updates)
