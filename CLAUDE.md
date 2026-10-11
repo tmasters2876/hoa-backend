@@ -108,6 +108,8 @@ hoa-backend/
 
 Unit tests for `filter_relevant_clauses()` live in `tests/test_ask_gpt.py` (pure function, no Supabase mocking needed).
 
+**"Other as approved by the ARC" rule in system prompt (owner, Oct 2026)**: when a document lists approved items and includes "Other as approved by ARC", an unnamed item is NOT prohibited — it requires ARC approval. The bot must say so and may call something prohibited only when the document names it (fences: barbed wire, chain link). Added after the bot told a resident T-post fences were "prohibited"; the WALLS_01 plain summary was restated to carry the same logic.
+
 **CCR delegation rule in system prompt**: When a CCR delegates to Builders Guidelines ("per the Builder Guidelines" / "as approved by the ARC"), Builders Guidelines governs that topic. GPT cites both documents.
 
 **Citation grouping**: GPT groups related rules in one paragraph with a single citation at the end — not one citation per sentence.

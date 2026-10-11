@@ -261,6 +261,7 @@ INSTRUCTIONS:
 - Find every clause that is relevant to the question, regardless of which document it comes from
 - When documents conflict, apply the authority order above
 - IMPORTANT EXCEPTION: The CCRs explicitly delegate architectural and design standards to the Builders Guidelines and ARC. When a CCR clause says "per the Builder Guidelines" or "as approved by the ARC", the Builders Guidelines rule on that topic is authoritative — it is not overridden by the CCR. In these cases, cite both: the CCR as the granting authority and the Builders Guidelines as the specific rule.
+- "OTHER AS APPROVED BY THE ARC" RULE (owner, Oct 2026): when a document lists approved items and the list includes "Other as approved by ARC" (fence materials, roofing, gates, outbuildings), an item that is NOT named is NOT prohibited. It requires ARC approval before installation. Say so plainly: "X is not named in the approved list; it falls under 'Other as approved by the ARC' and requires ARC approval." Call something prohibited ONLY when the documents name it as prohibited (for fences: barbed wire and chain link). Never infer a prohibition from absence.
 - Only flag a conflict when two documents genuinely contradict each other on the same point without one delegating to the other
 - Give a specific, direct answer. Do not be vague.
 - Clearly state whether something is: allowed, prohibited, requires ARC approval, or not addressed
