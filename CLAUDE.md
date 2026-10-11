@@ -9,7 +9,7 @@ This repo powers two production services for Plantation Lakes Community Associat
 - **hoa-backend** — public-facing Flask API answering resident questions via a Carrd-embedded chatbot
 - **hoa-admin** — protected admin console (Flask + Jinja2). Committee members read, search and flag the governing documents and propose revised language on flags; the Board decides each proposal on the Board Decisions page; board/superuser maintain the clause database (edits, approvals, users). See THE LAW below.
 
-**hoa-admin has a local dev environment** (`dev/`, added Sept 2026): a local Supabase stack in Docker seeded from a copy of production, run with `dev/dev.sh` — see [dev/README.md](dev/README.md). Test UI/UX changes there before pushing; pushing to `main` still deploys straight to production. Changes to hoa-backend (the public API) are tested on the dev service first (`../hoa-backend-dev/`), then applied independently to prod.
+**hoa-admin has a local dev environment** (`dev/`, added Sept 2026): a local Supabase stack in Docker seeded from a copy of production, run with `dev/dev.sh` — see [dev/README.md](dev/README.md). Test UI/UX changes there before pushing; pushing to `main` still deploys straight to production. **`../hoa-backend-dev/` is the Carrd BACKUP service** (owner, Oct 2026): same Supabase database, its own Render service. Any change to the answer logic here (`ask_gpt.py`, the `/ask` path in `app.py`) must be mirrored there in the same session — copy `ask_gpt.py` across, run its tests and a live `/ask` through its Flask test client, commit, push (Render deploys both). Data fixes need no mirroring; the database is shared.
 
 ---
 
