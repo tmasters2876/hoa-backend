@@ -1,0 +1,29 @@
+video: 03-flags-list
+title: The Revision Flags page
+audience: member
+signed_in_as: dev-member
+length: about 1 minute
+scenes:
+  - page: Revision Flags
+    say: >
+      Revision Flags is where the committee's work lives. Every flag is one clause, or one topic, that someone
+      thought deserved a closer look.
+    zoom: the page heading
+  - page: Revision Flags
+    say: >
+      The four tiles across the top tell you where things stand at a glance. Open means nobody has weighed in
+      yet. In Discussion means the conversation has started. Awaiting Board means the committee has agreed and
+      sent it on. Resolved covers everything that has reached an end, one way or another.
+    zoom: each tile in turn
+  - page: Revision Flags
+    say: >
+      The filters narrow the list. You can show only active flags, only the ones the Board has decided, or
+      only clause flags versus topic flags. Active is the view you'll use most.
+    action: open the status filter, show the options
+    zoom: the filter row
+  - page: Revision Flags
+    say: >
+      Each row shows the clause or topic, who raised it, its status, and when it last moved. Click any row to
+      open the flag. The next video is about what you can do once you're there.
+    action: click the roof framing flag
+    zoom: the row, then follow onto the flag page

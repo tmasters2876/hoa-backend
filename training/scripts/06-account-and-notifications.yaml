@@ -1,0 +1,41 @@
+video: 06-account-and-notifications
+title: Your account and email notifications
+audience: member
+signed_in_as: dev-member
+length: about 2 minutes
+scenes:
+  - page: Account
+    say: >
+      Account is the last item in the sidebar. It's where your email and your notification settings live,
+      and where you change your password.
+    zoom: the Account page heading
+  - page: Account
+    say: >
+      Put your email on your account first. It does two things. It lets you reset a forgotten password from the
+      sign-in page, and it lets the console tell you when a flag you're part of moves.
+    action: type an email address
+    zoom: the Email field
+  - page: Account
+    say: >
+      There are two switches. Flag activity covers new flags, and comments, proposals, decisions, and
+      closures on flags you're part of. Board steps tells Board accounts when a flag is sent to the Board or
+      recalled. Leave both on to hear about everything, or turn flag activity off to keep the address for
+      password resets only.
+    zoom: the two checkboxes
+  - page: Account
+    say: >
+      Click Save. From then on, each email tells you who did what, where the flag stands now, the comment or
+      reason, and a link straight to the flag. You also get a copy of anything you do yourself, as a receipt.
+    action: click Save
+    zoom: the Save button, then the confirmation
+  - page: Account
+    say: >
+      Change My Password is just below. Enter your current password and the new one twice. Eight characters
+      or more.
+    action: open Change My Password
+    zoom: the three fields
+  - page: Account
+    say: >
+      That's the console. Six short videos, and you've seen all of it. If anything would make it easier to use,
+      say so. The tool changes when the committee asks.
+    zoom: slow pull back to the full page

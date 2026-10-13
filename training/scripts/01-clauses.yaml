@@ -1,0 +1,48 @@
+video: 01-clauses
+title: Reading the governing documents
+audience: member
+signed_in_as: dev-member
+length: about 3 minutes
+scenes:
+  - page: Clauses
+    say: >
+      The Clauses page is the governing documents, broken into pieces you can read one at a time. Each card
+      is one clause: the document it comes from, the page, the citation, and a few tags that say what it's about.
+    zoom: one clause card
+  - page: Clauses
+    say: >
+      The Browse panel at the top filters the list. Type a keyword, like fence or shed, and the list narrows to
+      clauses that mention it. You can also pick a single document, like the Declaration or the Builder
+      Guidelines, or a tag.
+    action: type "fence" in Keyword, Apply Filters
+    zoom: the Keyword field, then the shorter list
+  - page: Clauses
+    say: >
+      Each card has a Read clause link. Open it and you get two things: a plain-English summary, and the
+      exact text as it appears in the recorded document. The summary is for orientation. The recorded text
+      is what governs.
+    action: expand Read clause on one card
+    zoom: the summary, then the verbatim text
+  - page: Clauses
+    say: >
+      View Source opens the recorded PDF in Google Drive at that document, so you can see the page for
+      yourself. That's the same file residents open when the community chatbot cites a rule.
+    action: hover View Source
+    zoom: the View Source link
+  - page: Clauses
+    say: >
+      The flag button on a card starts a revision flag for that clause. We'll spend a whole video on flags,
+      but the idea is simple: if a clause deserves a closer look, flag it, and say why in a sentence or two.
+    zoom: the Flag button
+  - page: Clause page
+    say: >
+      Clicking a clause ID opens that clause's own page. It has everything about the one clause in one place:
+      the full text, the source link, and every flag anyone has raised on it. It's the best place to read before
+      you comment or propose.
+    action: click a clause ID badge
+    zoom: the clause header, then the Revision Flags section
+  - page: Clauses
+    say: >
+      One more thing. Export CSV gives you the whole set of clauses as a spreadsheet, if you'd rather read
+      on your own. Next: asking the documents a question with Search.
+    zoom: the Export CSV panel

@@ -1,0 +1,28 @@
+video: 05-guide
+title: The Guide and the path to a vote
+audience: member
+signed_in_as: dev-member
+length: about 1 minute
+scenes:
+  - page: Guide
+    say: >
+      The Guide is the written version of everything in these videos, kept in the console so it's always the
+      current version. If you'd rather read than watch, start here.
+    zoom: the Guide heading
+  - page: Guide
+    say: >
+      The diagram shows the whole path. The committee lane is review, flag, discuss, propose. The Board lane
+      is approve or not yet. And the community lane is the attorney's review and the owners' vote. Nothing
+      changes in a governing document until the owners have voted on it.
+    zoom: each lane of the diagram in turn
+  - page: Guide
+    say: >
+      Below the diagram, each step has its own section with the details: what to look for when you review,
+      how to write a flag that's easy to act on, and how to track a flag after it leaves the committee.
+    action: scroll through the step headings
+    zoom: the step headings
+  - page: Guide
+    say: >
+      Keep the Guide open in another tab while you work, especially the first few times. Next: your account
+      and notifications.
+    zoom: slow pull back

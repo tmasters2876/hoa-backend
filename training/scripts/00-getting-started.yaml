@@ -1,0 +1,44 @@
+video: 00-getting-started
+title: Getting started
+audience: member
+signed_in_as: dev-member
+length: about 3 minutes
+scenes:
+  - page: Sign-in
+    say: >
+      Welcome to the Plantation Lakes committee console. This short series walks through each part of it,
+      one page at a time. This first video covers signing in and finding your way around.
+    zoom: the sign-in card
+  - page: Sign-in
+    say: >
+      You sign in with the username you were given and your password. If you were sent a temporary
+      password, the console asks you to choose your own the first time you sign in, and that's it.
+    action: type username and password, sign in
+    zoom: the two fields, then the Sign in button
+  - page: Sign-in
+    say: >
+      If you ever forget your password, the link under the sign-in button sends a reset link to the email on
+      your account. Type your username or your email, whichever you remember. The link works for one hour.
+    action: show the Forgot your password link, then return
+    zoom: the Forgot your password link
+  - page: Clauses
+    say: >
+      Once you're in, everything lives in the sidebar on the left. Clauses is the governing documents,
+      laid out one rule at a time. Search lets you ask a question in plain English. Revision Flags is
+      where the committee's work happens. Guide is the written walkthrough of the whole process, and
+      Account is where your email and notification settings live.
+    zoom: the sidebar, one item at a time
+  - page: Clauses
+    say: >
+      At the top of the Clauses page there's a panel called Help and Reference. It opens and closes with a
+      click, and it describes every feature on every page. When you're not sure what something does, that's
+      the quickest place to look.
+    action: open Help & Reference, scroll briefly, close it
+    zoom: the Help & Reference heading
+  - page: Clauses
+    say: >
+      Two things worth knowing from the start. First, nothing you do here changes a governing document by
+      itself. The committee proposes, the Board decides, the attorney reviews, and the community votes.
+      Second, everything is on the record, which is a good thing: your work and your reasoning are kept
+      exactly as you wrote them. The next video looks at the Clauses page.
+    zoom: slow pull back to the full page

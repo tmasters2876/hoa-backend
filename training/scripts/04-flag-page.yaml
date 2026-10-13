@@ -1,0 +1,53 @@
+video: 04-flag-page
+title: Working a flag, start to finish
+audience: member
+signed_in_as: dev-member
+length: about 3 minutes
+scenes:
+  - page: Flag detail
+    say: >
+      This is a flag. At the top, the strip shows where it is in the process, from Open through the Board's
+      decision. Below that are the notes from whoever raised it, and the clause it points to, with the recorded
+      text and a link to the source.
+    zoom: the lifecycle strip, then the notes, then the clause
+  - page: Flag detail
+    say: >
+      Everything starts with a comment. Read the clause, read the notes, and say what you think. The first
+      comment moves the flag into discussion on its own. Nobody has to change a status by hand.
+    action: type a comment, Post Comment
+    zoom: the comment box, then the strip moving to In Discussion
+  - page: Flag detail
+    say: >
+      Talk it out in the thread. Comments are kept in order and stay on the record, which means the Board can
+      see how the committee reached its view, not just the result.
+    zoom: the comment thread
+  - page: Flag detail
+    say: >
+      When the committee has language in mind, record it in the proposal panel. Current language is the text
+      being replaced. Proposed language is the committee's version. The third box says where it came from, or
+      simply "new drafting." Any member can save it, and it can be revised as the discussion goes on.
+    action: open the proposal panel, show the three boxes
+    zoom: Current language, Proposed language, Where the language comes from
+  - page: Flag detail
+    say: >
+      A discussion ends one of two ways. If the committee agrees on the proposal, any member sends it to the
+      Board. If the committee decides the clause is fine as it is, any member closes it with a short reason.
+      Both are in the Committee actions panel.
+    zoom: Send to the Board, then Close — no change needed
+  - page: Flag detail
+    say: >
+      Sent something too soon? Recall from Board brings it back to the committee until the Board has
+      decided, and the proposal unlocks again. Closed something by accident? Reopen picks it up right where
+      it was. We're adults; mistakes are a click to undo.
+    zoom: Recall from Board, then Reopen
+  - page: Flag detail
+    say: >
+      After the Board decides, the outcome shows at the top of the flag. Board Approved means the proposal
+      goes on to the community attorney and then to the owners for a vote. If the Board says not yet, the
+      reason is written out, and the flag can be reopened and revised.
+    zoom: the outcome box
+  - page: Flag detail
+    say: >
+      That's the whole loop: flag, discuss, propose, send to the Board. Everything you type stays exactly as
+      you typed it. Next: the Guide.
+    zoom: slow pull back

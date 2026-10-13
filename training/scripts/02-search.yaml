@@ -1,0 +1,39 @@
+video: 02-search
+title: Asking a question
+audience: member
+signed_in_as: dev-member
+length: about 2 minutes
+scenes:
+  - page: Search
+    say: >
+      Search is the quickest way into the documents. Ask a question the way a neighbor would ask it, and the
+      console answers from the governing documents, with citations.
+    zoom: the Ask a Question box
+  - page: Search
+    say: >
+      Let's try one. Can I build a fence with T-posts?
+    action: type the question, click Ask
+    zoom: the question, then the Ask button
+  - page: Search
+    say: >
+      The answer comes back in plain English, and every claim in it points to a clause. Here it says T-posts
+      aren't named in the approved materials, so they fall under "Other as approved by the ARC" and need
+      ARC approval. The citation goes to page thirteen of the Builder Guidelines.
+    zoom: the answer, then the citation
+  - page: Search
+    say: >
+      Below the answer are the clauses it relied on. Each one links to its clause page, so you can read the
+      exact text behind the answer.
+    zoom: the cited clauses list
+  - page: Search
+    say: >
+      This is also a good way to find things to flag. If an answer surprises you, or two rules seem to pull in
+      different directions, you can flag right from here. A topic flag ties the whole question, and the clauses
+      behind it, to one discussion.
+    action: open the topic flag dialog, show the notes box, cancel
+    zoom: the flag dialog
+  - page: Search
+    say: >
+      The same answers power the community's chatbot, so when the committee improves the documents, the
+      answers residents get improve with them. Next: the Revision Flags page.
+    zoom: slow pull back
