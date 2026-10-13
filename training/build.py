@@ -39,10 +39,11 @@ VIEW_W, VIEW_H, SCALE = 1920, 1080, 2
 OUT_W, OUT_H, FPS = 1920, 1080, 30
 TITLE_SECONDS = 2.8
 LEAD, TAIL = 0.35, 0.6                      # silence around each scene's narration
-VOICE = "coral"
+VOICE = "nova"
 VOICE_MODEL = "gpt-4o-mini-tts"
-VOICE_STYLE = ("American woman, warm and natural, conversational pace, like a friendly neighbor "
-               "showing someone around a tool she likes. Clear, unhurried, not a broadcaster.")
+VOICE_STYLE = ("Bright, cheerful and upbeat American woman with a smile in her voice. Bubbly and friendly, genuinely happy to help, "
+               "like a favorite customer-success guide giving a quick tour. Warm, light, energetic pace, rising intonation on good news. "
+               "Still clear and professional. Never flat, never stern, never ominous.")
 ACCENT = (15, 110, 86)
 ONEDRIVE = Path.home() / "Library/CloudStorage/OneDrive-Personal/Plantation Lake Committee/Training"
 
@@ -379,12 +380,13 @@ def title_card(script) -> Image.Image:
 
 
 def target_rect(bbox, W, H):
+    """Gentle framing: the element sits in context, never cropped below ~55% of the page."""
     if not bbox:
         return (0.0, 0.0, float(W), float(H))
     x, y, w, h = bbox
-    pad = 70
-    tw = max(w + 2 * pad, (h + 2 * pad) * OUT_W / OUT_H, W * 0.36)
-    if tw >= W * 0.86:
+    pad = 140
+    tw = max(w + 2 * pad, (h + 2 * pad) * OUT_W / OUT_H, W * 0.55)
+    if tw >= W * 0.9:
         return (0.0, 0.0, float(W), float(H))
     th = tw * OUT_H / OUT_W
     cx, cy = x + w / 2, y + h / 2
@@ -393,26 +395,36 @@ def target_rect(bbox, W, H):
 
 
 def ease(u):
-    return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, u)))
+    u = max(0.0, min(1.0, u))
+    return u * u * u * (u * (u * 6 - 15) + 10)          # smootherstep: soft start, soft landing
 
 
 def lerp_rect(a, b, u):
     return tuple(a[i] + (b[i] - a[i]) * u for i in range(4))
 
 
-def draw_frame(img: Image.Image, rect, bbox, glow: float, fast: bool) -> bytes:
+def drift(rect, W, H, u, amount=0.035):
+    """Slow push-in while holding, about the rect's centre, kept inside the page."""
     x, y, w, h = rect
-    fr = img.resize((OUT_W, OUT_H), Image.BILINEAR if fast else Image.LANCZOS,
-                    box=(x, y, x + w, y + h))
+    k = 1 - amount * u
+    nw, nh = w * k, h * k
+    nx = min(max(x + (w - nw) / 2, 0), W - nw); ny = min(max(y + (h - nh) / 2, 0), H - nh)
+    return (nx, ny, nw, nh)
+
+
+def render_frame(img: Image.Image, rect, bbox, glow: float) -> Image.Image:
+    x, y, w, h = rect
+    fr = img.resize((OUT_W, OUT_H), Image.BILINEAR, box=(x, y, x + w, y + h))
     if bbox and glow > 0:
         sx, sy = OUT_W / w, OUT_H / h
-        bx0, by0 = (bbox[0] - x) * sx - 10, (bbox[1] - y) * sy - 10
-        bx1, by1 = (bbox[0] + bbox[2] - x) * sx + 10, (bbox[1] + bbox[3] - y) * sy + 10
+        bx0, by0 = (bbox[0] - x) * sx - 12, (bbox[1] - y) * sy - 12
+        bx1, by1 = (bbox[0] + bbox[2] - x) * sx + 12, (bbox[1] + bbox[3] - y) * sy + 12
         ov = Image.new("RGBA", (OUT_W, OUT_H), (0, 0, 0, 0))
         od = ImageDraw.Draw(ov)
-        od.rounded_rectangle([bx0, by0, bx1, by1], 14, outline=ACCENT + (int(230 * glow),), width=5)
+        od.rounded_rectangle([bx0 - 4, by0 - 4, bx1 + 4, by1 + 4], 18, outline=ACCENT + (int(60 * glow),), width=8)
+        od.rounded_rectangle([bx0, by0, bx1, by1], 14, outline=ACCENT + (int(200 * glow),), width=3)
         fr = Image.alpha_composite(fr.convert("RGBA"), ov).convert("RGB")
-    return fr.tobytes()
+    return fr
 
 
 def cmd_render(only=None):
@@ -427,14 +439,15 @@ def cmd_render(only=None):
         mp4 = out_dir / f"{num} {title}.mp4"
         silent = vdir / "picture.mp4"
         ff = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}",
-                               "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                               "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "19",
                                "-pix_fmt", "yuv420p", str(silent)], stdin=subprocess.PIPE)
         frames = 0
-        card = title_card(script).tobytes()
+        last = title_card(script)
         for _ in range(int(TITLE_SECONDS * FPS)):
-            ff.stdin.write(card); frames += 1
+            ff.stdin.write(last.tobytes()); frames += 1
         prev_img_name, prev_rect = None, None
         cache: dict[str, Image.Image] = {}
+        XFADE = int(FPS * 0.5)
         for segs, dur in zip(segments, durs):
             nframes_scene = round(dur * FPS)
             per = [nframes_scene // len(segs)] * len(segs)
@@ -446,31 +459,33 @@ def cmd_render(only=None):
                 W, H = img.size
                 full = (0.0, 0.0, float(W), float(H))
                 tgt = full if seg["full"] else target_rect(seg["bbox"], W, H)
-                start = prev_rect if (prev_img_name == seg["img"] and prev_rect) else full
-                move = 0 if start == tgt else min(int(FPS * (1.8 if seg["full"] else 1.0)), int(nf * 0.45))
-                glow_frames = int(FPS * 0.35)
-                held = None
+                same_page = prev_img_name == seg["img"] and prev_rect is not None
+                start = prev_rect if same_page else full
+                fade = 0 if same_page else min(XFADE, nf // 3)
+                span = 2.0 if seg["full"] else 1.5
+                move = 0 if start == tgt else min(int(FPS * span), int(nf * 0.5))
+                hold = max(1, nf - move)
+                show_hl = bool(seg["bbox"]) and not seg["full"] and tgt != full
                 for f in range(nf):
                     if f < move:
-                        rect = lerp_rect(start, tgt, ease((f + 1) / move))
-                        ff.stdin.write(draw_frame(img, rect, None, 0, True))
+                        rect = lerp_rect(start, tgt, ease((f + 1) / move)); g = 0.0
                     else:
-                        g = 0.0 if seg["full"] or not seg["bbox"] or tgt == full else min(1.0, (f - move + 1) / glow_frames)
-                        static = g == 0.0 or g >= 1.0          # nothing moving: render once, reuse
-                        if static and held is not None and held[0] == g:
-                            ff.stdin.write(held[1])
-                        else:
-                            fr = draw_frame(img, tgt, seg["bbox"] if g > 0 else None, g, not static)
-                            if static:
-                                held = (g, fr)
-                            ff.stdin.write(fr)
-                    frames += 1
-                prev_img_name, prev_rect = seg["img"], tgt
+                        u = (f - move) / hold
+                        rect = drift(tgt, W, H, ease(u))
+                        g = min(1.0, (f - move) / (FPS * 0.5)) if show_hl else 0.0
+                        if show_hl and nf - f < FPS * 0.4:          # let the outline go before the next move
+                            g *= (nf - f) / (FPS * 0.4)
+                    fr = render_frame(img, rect, seg["bbox"] if show_hl else None, g)
+                    if f < fade:
+                        fr = Image.blend(last, fr, ease((f + 1) / fade))
+                    ff.stdin.write(fr.tobytes()); frames += 1
+                    if f == nf - 1:
+                        last = fr
+                prev_img_name, prev_rect = seg["img"], drift(tgt, W, H, 1.0)
         ff.stdin.close(); ff.wait()
-        # second pass: narration + a captions track the viewer can switch on or off
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(silent), "-i", str(vdir / "narration.wav"),
                         "-i", str(vdir / "captions.vtt"), "-map", "0:v", "-map", "1:a", "-map", "2:s",
-                        "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-c:s", "mov_text",
+                        "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-c:s", "mov_text",
                         "-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "title=English",
                         "-metadata", f"title={title}", "-movflags", "+faststart", str(mp4)], check=True)
         shutil.copy(vdir / "captions.vtt", mp4.with_suffix(".vtt"))

@@ -130,7 +130,7 @@ All routes protected by `@login_required`. Session expires 8 hours. `SECRET_KEY`
 
 Twelve narrated videos, one per sidebar section: member set 00–06, Board/admin set 10–14. Built by `training/build.py`
 from `scripts/*.yaml` (words, owner-reviewed) + `capture.yaml` (browser directions) against the DEV sandbox; narration by
-OpenAI TTS (voice `coral`); switchable caption track + `.vtt`; published to OneDrive `Plantation Lake Committee/Training/`.
+OpenAI TTS (voice `nova`, cheerful-professional style per owner); switchable caption track + `.vtt`; published to OneDrive `Plantation Lake Committee/Training/`.
 **When a console page changes, update its `capture.yaml` entry (and the script if the words change) and rebuild that video.**
 See `training/README.md`.
 
