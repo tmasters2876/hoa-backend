@@ -1,0 +1,43 @@
+video: 10-board-decisions
+title: Board Decisions
+audience: board
+signed_in_as: dev-board
+length: about 3 minutes
+scenes:
+  - page: Board Decisions
+    say: >
+      Board accounts see one more item in the sidebar: Board Decisions. This is where the committee's
+      proposals arrive once the committee has agreed on them, and where the Board records its answer.
+    zoom: the Board Decisions item in the sidebar, then the page heading
+  - page: Board Decisions
+    say: >
+      The queue tab lists everything waiting on the Board, oldest first. Each entry shows the clause, the
+      committee's notes, the current language, and the proposed language side by side, so the decision can
+      be made from this page without hunting for the clause.
+    zoom: one queue entry, then the current and proposed language
+  - page: Board Decisions
+    say: >
+      There are three answers. Approve means the proposal moves on to the community attorney for review and
+      then to the owners for a vote. Reject asks for a reason, and that reason is shown to the committee so
+      they can revise and send it again. Defer sets it aside without a decision, for when the Board wants to
+      wait on something else first.
+    zoom: Approve, Reject, Defer in turn
+  - page: Board Decisions
+    say: >
+      Let's record a decision. The console asks you to confirm, and then the flag closes with the outcome
+      written at the top, the committee is notified, and the decision joins the history.
+    action: click Approve on the sample flag, confirm
+    zoom: the confirmation, then the flag outcome
+  - page: Board Decisions
+    say: >
+      The decided tab is the permanent record: every proposal the Board has acted on, with the decision,
+      the date, and the reason where there was one. It's the same record the community can be shown if anyone
+      asks how a change came about.
+    action: switch to the decided tab
+    zoom: the decided list
+  - page: Board Decisions
+    say: >
+      One thing to know: a committee member can recall a flag from this queue until the Board decides, so an
+      entry can disappear and come back later with a revised proposal. That's working as intended. Next:
+      Resident Questions.
+    zoom: slow pull back

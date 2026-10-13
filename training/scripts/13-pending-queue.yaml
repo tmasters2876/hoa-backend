@@ -1,0 +1,27 @@
+video: 13-pending-queue
+title: The Pending queue
+audience: board
+signed_in_as: dev-board
+length: about 1 minute
+scenes:
+  - page: Pending
+    say: >
+      Pending is the approval queue for database changes: every edit, addition, or deletion that has been
+      submitted and is waiting for a superuser's review. Board accounts can see it; superusers act on it.
+    zoom: the Pending item in the sidebar, then the queue
+  - page: Pending
+    say: >
+      Each item shows who submitted it, when, and a field-by-field before and after, so a reviewer can see
+      exactly what would change. The source check score sits beside it.
+    zoom: one item's before and after
+  - page: Pending
+    say: >
+      The History tab is the record of every decided change: approved or declined, by whom, when, and the
+      reason for any decline. It's the database's own governance record, separate from the committee's flags.
+    action: switch to History
+    zoom: the history list
+  - page: Pending
+    say: >
+      A badge on the Pending item in the sidebar shows how many are waiting, so a reviewer can see at a glance
+      when there's something to look at. Next, for superusers: users, tags, and the audit log.
+    zoom: the sidebar badge

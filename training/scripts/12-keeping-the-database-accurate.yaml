@@ -1,0 +1,53 @@
+video: 12-keeping-the-database-accurate
+title: Keeping the clause database accurate
+audience: board
+signed_in_as: dev-board
+length: about 3 minutes
+scenes:
+  - page: Clauses
+    say: >
+      Board accounts have a second job in the console: keeping the clause database accurate, because it's what
+      the community's chatbot answers from. On the Clauses page you'll notice extra tools that committee members
+      don't see.
+    zoom: the Add Clause panel, then the Search Test panel
+  - page: Clause page
+    say: >
+      Open any clause page and there's an Edit This Clause panel. The fields are the ones residents depend on:
+      the page, the citation, the Google Drive source link, the plain summary, the tags, and the recorded text.
+    action: open Edit This Clause
+    zoom: the edit fields
+  - page: Clause page
+    say: >
+      Say a summary is misleading. Change the wording and click Submit for Approval. The live clause doesn't
+      change yet. Your edit goes to the approval queue, where a superuser reviews it, and only then does it reach
+      residents. Two sets of eyes on every change.
+    action: edit the plain summary, Submit for Approval
+    zoom: the summary field, then the Submit for Approval button, then the confirmation
+  - page: Clause page
+    say: >
+      When you submit, the console also checks the clause text against the recorded PDF on Google Drive and
+      shows a match score. It's advisory, a quick sanity check that the text really is on the page the clause cites.
+    zoom: the verification badge
+  - page: Clause page
+    say: >
+      Below the edit panel, Pending and Decided Changes shows what's been proposed on this clause and what
+      happened to it, with a field-by-field before and after. Change History is the full audit trail for the clause.
+    zoom: Pending & Decided Changes, then Change History
+  - page: My Submissions
+    say: >
+      My Submissions, in the sidebar, lists every change you've submitted and its status. If one is declined, the
+      reason is written there so you can adjust and resubmit.
+    action: open My Submissions
+    zoom: the table
+  - page: Clauses
+    say: >
+      Add Clause is for a rule that exists in a recorded document but is missing here. Citation, page, and the
+      Drive link are required, and it follows the same approval path. Search Test lets you ask a question and see
+      exactly which clauses the chatbot would use to answer it, which is the fastest way to find a gap.
+    action: open Search Test, run a question
+    zoom: Add Clause, then the Search Test results
+  - page: Clauses
+    say: >
+      Everything here keeps the database honest without anyone editing the governing documents themselves;
+      those change only through the committee, the Board, the attorney, and the owners. Next: the Pending queue.
+    zoom: slow pull back

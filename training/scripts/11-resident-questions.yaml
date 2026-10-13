@@ -1,0 +1,28 @@
+video: 11-resident-questions
+title: Resident Questions
+audience: board
+signed_in_as: dev-board
+length: about 2 minutes
+scenes:
+  - page: Resident Questions
+    say: >
+      Resident Questions is a log of what the community has asked the chatbot, and what it answered. No one is
+      identified; it's the questions and the answers, newest first.
+    zoom: the page heading, then the first row
+  - page: Resident Questions
+    say: >
+      Each row shows the question, the answer, and the clauses the answer cited. The cited clauses link to their
+      clause pages, so you can check an answer against the recorded text in one click.
+    zoom: the Question & Answer column, then Cited Clauses
+  - page: Resident Questions
+    say: >
+      This is the Board's best window into accuracy. If an answer is wrong, the usual cause is a clause whose
+      summary or page is off, or a rule that was never captured. Open the cited clause, check it against the source,
+      and fix it through the edit form, which the next video covers. If the documents themselves are the problem,
+      raise a flag for the committee.
+    zoom: a cited clause link
+  - page: Resident Questions
+    say: >
+      The filters at the top narrow by date or keyword, which is handy when a resident mentions a question they
+      asked. Next: keeping the clause database accurate.
+    zoom: the filter row

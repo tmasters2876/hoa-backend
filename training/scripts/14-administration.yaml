@@ -1,0 +1,45 @@
+video: 14-administration
+title: Administration for superusers
+audience: superuser
+signed_in_as: dev-superuser
+length: about 3 minutes
+scenes:
+  - page: Pending
+    say: >
+      Superusers are the final check on every database change. On the Pending page, each item has Approve and
+      Reject. Approve applies the change; Reject asks for a reason the submitter will see. A deletion always needs
+      a second superuser, and self-approval of your own edit is possible but flagged in the audit log as the exception
+      it is.
+    zoom: Approve and Reject on one item
+  - page: Account
+    say: >
+      The Account page is also the user management page for superusers. Add a user with a username, a temporary
+      password, and a role: member, board, or superuser. Each role includes everything below it. The person is asked
+      to set their own password the first time they sign in.
+    action: show the Add User panel
+    zoom: the username, password, and role fields
+  - page: Account
+    say: >
+      The Admin Users table lets you set an email on anyone's account, switch their notification emails on or off,
+      change a role, deactivate an account, or reset a password. A role change takes effect on the person's next page
+      load, with no sign-out needed.
+    zoom: the table, then the email and flag-emails controls on one row
+  - page: Tags
+    say: >
+      Tags lists every tag in use across the clauses, with counts. Tags help both the filters and the chatbot's
+      relevance matching, so keeping them consistent, and upper case, keeps answers sharp. Rename from this page
+      and every clause follows.
+    zoom: the tag list
+  - page: Audit Log
+    say: >
+      The Audit Log is the record of everything that has happened to the database and the flags: every edit,
+      approval, flag step, email setting, and sign-in. Filter by person, action, or date. It's append-only; nothing
+      here is ever removed.
+    action: filter by a user
+    zoom: the filters, then a few rows
+  - page: Audit Log
+    say: >
+      That completes the Board and administration set. Together with the member videos, every page in the
+      console has been covered. When a page changes, its video is rebuilt from the script, so what you see here
+      stays current.
+    zoom: slow pull back
