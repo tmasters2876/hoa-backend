@@ -289,6 +289,12 @@ def to_int_or_none(value):
         return None
 
 
+# Bookkeeping columns a reviewer never decides on: the embedding vector (1,536
+# numbers that render as a wall of red and green) and the ingestion note. They
+# change as a side effect of a text edit, so they stay out of the diff.
+_DIFF_HIDDEN_FIELDS = {"embedding", "match_source"}
+
+
 def build_field_diff(change: dict) -> list[dict]:
     """Per-field old→new diff for a pending_changes row, computed in Python
     so templates just render. Reusable by the pending page, and later by
@@ -325,14 +331,14 @@ def build_field_diff(change: dict) -> list[dict]:
     diffs = []
     if action == "create":
         for field in sorted(proposed):
-            if field.startswith("_"):
+            if field.startswith("_") or field in _DIFF_HIDDEN_FIELDS:
                 continue
             if norm(proposed.get(field)) != "":
                 diffs.append({"field": field, "old": None, "new": display(proposed.get(field))})
         return diffs
 
     for field in sorted(set(original) | set(proposed)):
-        if field.startswith("_"):
+        if field.startswith("_") or field in _DIFF_HIDDEN_FIELDS:
             continue
         old, new = original.get(field), proposed.get(field)
         if norm(old) != norm(new):

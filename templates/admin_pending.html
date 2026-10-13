@@ -237,7 +237,7 @@
               {% else %}
                 {% set verif = (entry.proposed_changes or {}).get("_verification") or {} %}
                 {% set vstatus = verif.get("status") or "skipped" %}
-                {% set vscore = verif.get("score") or 0 %}
+                {% set vscore = ((verif.get("score") or 0) | float) | round | int %}
                 {% if vstatus == "verified" %}
                   <span class="verify-badge verified">✅ Verified ({{ vscore }}%)</span>
                 {% elif vstatus == "partial" %}

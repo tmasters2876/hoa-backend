@@ -189,3 +189,6 @@ missing_candidates_*.csv
 dev/.env.dev
 dev/supabase/.branches/
 dev/supabase/.temp/
+
+training/.venv/
+training/build/

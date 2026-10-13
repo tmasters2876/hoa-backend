@@ -13,3 +13,23 @@ Training folder. Captions are a separate track so viewers can turn them on or of
 
 Member set (everyone): 00–06. Board set (Board accounts): 10–14, written after
 the member set is approved.
+
+## Building the videos
+
+```bash
+cd training
+uv venv .venv --python 3.13 && uv pip install --python .venv/bin/python playwright openai pyyaml requests python-dotenv pillow supabase
+../dev/dev.sh up && ../dev/dev.sh run          # the DEV console on 5052 must be running
+.venv/bin/python build.py all                   # demo data → capture → narration → captions → MP4s
+.venv/bin/python build.py all 04                # one video
+.venv/bin/python build.py cleanup               # remove the demo flags and the sample edit from DEV
+.venv/bin/python build.py publish               # copy to OneDrive/Plantation Lake Committee/Training
+```
+
+- `scripts/*.yaml` — the words (narration = captions). `capture.yaml` — what the browser does, one entry per scene.
+- Capture runs in Chrome against the DEV sandbox only, as dev-member / dev-board / dev-superuser, at 1920×1080 (2× for crisp zooms).
+  The DEV badge and outbox link are hidden; on the Users page real people's rows are hidden so only sandbox accounts appear.
+- Narration: OpenAI `gpt-4o-mini-tts`, voice `coral` (American female, warm, conversational). Cached by text, so only
+  changed lines are re-voiced.
+- Each MP4 carries a switchable English caption track (mov_text); the same captions sit beside it as a `.vtt`.
+- A changed screen means editing `capture.yaml`; changed words mean editing the script. Re-run `build.py all <video>`.

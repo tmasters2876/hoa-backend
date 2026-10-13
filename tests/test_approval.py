@@ -392,3 +392,13 @@ def test_self_approved_create_does_not_sit_in_the_pending_queue():
     assert r.status_code == 302
     updates = [c.args[0] for c in sb.update.call_args_list]
     assert any(u.get("status") == "approved" and u.get("review_notes") == "self-approved on creation" for u in updates)
+
+
+
+def test_field_diff_hides_embedding_and_match_source():
+    from admin_app import build_field_diff
+    change = {"action": "edit",
+              "original_values": {"plain_summary": "old words", "embedding": "[0.01, 0.02]", "match_source": "vector"},
+              "proposed_changes": {"plain_summary": "new words", "embedding": None, "match_source": "Admin Edited (Embedding Stale)"}}
+    fields = [d["field"] for d in build_field_diff(change)]
+    assert fields == ["plain_summary"]

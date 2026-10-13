@@ -1,0 +1,98 @@
+# Machine directions for each scene of each script, in order. The scripts hold the
+# words; this file holds what the browser does. One list per video; one entry per
+# scene. {A} and {B} are demo flags created in the DEV sandbox for the recording.
+#   goto / click / fill [sel, text] / wait sel / sleep ms / js / state X.y
+#   shot: [focus, focus, ...]   FULL = whole screen. Each focus is one zoom.
+
+00-getting-started:
+  - [{as: anon}, {goto: /login}, {shot: [".login-card"]}]
+  - [{as: anon}, {fill: ["#username", "dev-member"]}, {fill: ["#password", "devpass123"]}, {shot: ["#username", ".login-btn"]}]
+  - [{as: anon}, {shot: ["a[href$='/forgot']"]}]
+  - [{goto: /admin}, {shot: [".sidebar-nav", "a.nav-item[href$='/admin']", "a.nav-item[href$='/admin/search']", "a.nav-item[href$='/admin/flags']", "a.nav-item[href$='/admin/guide']", "a.nav-item[href$='/admin/users']"]}]
+  - [{click: "details.help-panel > summary"}, {sleep: 300}, {shot: ["details.help-panel"]}, {click: "details.help-panel > summary"}]
+  - [{shot: [FULL]}]
+
+01-clauses:
+  - [{goto: /admin}, {shot: ["article.clause-card"]}]
+  - [{fill: ["#q", "fence"]}, {shot: ["#q"]}, {click: "button:has-text('Apply Filters')"}, {wait: "article.clause-card"}, {shot: ["article.clause-card"]}]
+  - [{click: "article.clause-card details.clause-details > summary"}, {sleep: 300}, {shot: ["article.clause-card details.clause-details"]}]
+  - [{shot: ["article.clause-card .btn-view-source"]}]
+  - [{shot: ["article.clause-card .btn-flag"]}]
+  - [{click: "article.clause-card a.clause-id-badge"}, {wait: ".panel"}, {shot: [".topbar", ".panel:has(h2:text-is('Revision Flags'))"]}]
+  - [{goto: /admin}, {shot: [".panel:has(h2:text-is('Export CSV'))"]}]
+
+02-search:
+  - [{goto: /admin/search}, {shot: [".panel:has(h2:text-is('Ask a Question'))"]}]
+  - [{fill: ["#q", "Can I build a fence with T-posts?"]}, {shot: ["#q", "button:has-text('Ask')"]}, {click: "button:has-text('Ask')"}, {wait: ".answer-panel"}]
+  - [{shot: [".answer-panel", ".answer-panel a"]}]
+  - [{shot: [".clause-list"]}]
+  - [{click: "#topicFlagBtn"}, {sleep: 400}, {shot: ["#topicFlagNotes"]}, {click: "button:has-text('Cancel') >> visible=true"}]
+  - [{shot: [FULL]}]
+
+03-flags-list:
+  - [{goto: /admin/flags}, {shot: [FULL]}]
+  - [{shot: [".stat-tile >> nth=0", ".stat-tile >> nth=1", ".stat-tile >> nth=2", ".stat-tile >> nth=3"]}]
+  - [{shot: ["form:has(select[name='status'])"]}]
+  - [{shot: ["tr:has(a[href$='/admin/flags/{A}'])"]}, {click: "a[href$='/admin/flags/{A}']"}, {wait: ".lifecycle"}, {shot: [".lifecycle"]}]
+
+04-flag-page:
+  - [{goto: "/admin/flags/{A}"}, {shot: [".lifecycle", ".flag-notes-box", ".clause-card"]}]
+  - [{fill: ["#comment", "The engineer-of-record letter is the right fix. It puts the structural call with the person who is licensed to make it."]}, {shot: ["#comment"]}, {click: "button:has-text('Post Comment')"}, {wait: "#comments"}, {shot: [".lifecycle"]}]
+  - [{shot: ["#comments"]}]
+  - [{state: A.proposal}, {goto: "/admin/flags/{A}"}, {shot: ["#proposal_current", "#proposal_text", "#proposal_source"]}]
+  - [{shot: [".panel#actions h3:has-text('Send to the Board') >> xpath=..", ".panel#actions h3:has-text('Close') >> xpath=.."]}]
+  - [{state: A.submit}, {goto: "/admin/flags/{A}"}, {shot: ["button:has-text('Recall from Board')"]}, {state: A.recall}, {state: A.close}, {goto: "/admin/flags/{A}"}, {shot: ["button:has-text('Reopen')"]}, {state: A.reopen}]
+  - [{state: A.submit}, {state: A.approve}, {goto: "/admin/flags/{A}"}, {shot: ["#decision"]}]
+  - [{shot: [FULL]}]
+
+05-guide:
+  - [{goto: /admin/guide}, {wait: ".mermaid svg"}, {sleep: 800}, {shot: [".guide-md h1"]}]
+  - [{shot: [".mermaid svg g[id^='flowchart-COMMITTEE']", ".mermaid svg g[id^='flowchart-BOARD']", ".mermaid svg g[id^='flowchart-COMMUNITY']"]}]
+  - [{shot: [".guide-md h2:has-text('Step 1')", ".guide-md h2:has-text('Step 2')", ".guide-md h2:has-text('Step 4')"]}]
+  - [{shot: [FULL]}]
+
+06-account-and-notifications:
+  - [{goto: /admin/users}, {shot: [".panel:has(h2:text-is('Email & Notifications'))"]}]
+  - [{fill: ["#my_email", "dev-member@plca.dev"]}, {shot: ["#my_email"]}]
+  - [{shot: ["label:has(input[name='notify_flags'])", "label:has(input[name='notify_board'])"]}]
+  - [{shot: [".panel:has(h2:text-is('Email & Notifications')) button[type='submit']"]}, {click: ".panel:has(h2:text-is('Email & Notifications')) button[type='submit']"}, {wait: ".flash"}, {shot: [".flash"]}]
+  - [{click: "summary:has-text('Change My Password')"}, {sleep: 300}, {shot: ["details:has(summary:has-text('Change My Password'))"]}]
+  - [{shot: [FULL]}]
+
+10-board-decisions:
+  - [{goto: /admin/board}, {shot: ["a.nav-item[href$='/admin/board']", FULL]}]
+  - [{shot: [".bd-card:has(a[href*='AMEND1_03_OUTBUILDINGS_BARNS'])", ".bd-card:has(a[href*='AMEND1_03_OUTBUILDINGS_BARNS']) .bd-cols"]}]
+  - [{shot: [".bd-card:has(a[href*='AMEND1_03_OUTBUILDINGS_BARNS']) button[value='approved']", ".bd-card:has(a[href*='AMEND1_03_OUTBUILDINGS_BARNS']) button[value='rejected']", ".bd-card:has(a[href*='AMEND1_03_OUTBUILDINGS_BARNS']) button[value='deferred']"]}]
+  - [{click: ".bd-card:has(a[href*='AMEND1_03_OUTBUILDINGS_BARNS']) button[value='approved']"}, {wait: ".flash"}, {shot: [".flash"]}, {goto: "/admin/flags/{B}"}, {shot: ["#decision"]}]
+  - [{goto: "/admin/board?view=history"}, {shot: [".bd-card >> nth=0"]}]
+  - [{shot: [FULL]}]
+
+11-resident-questions:
+  - [{goto: /admin/questions}, {shot: [FULL, ".q-table tbody tr >> nth=0"]}]
+  - [{shot: [".q-table tbody tr >> nth=0 >> td >> nth=1", ".q-table tbody tr >> nth=0 >> td >> nth=2"]}]
+  - [{shot: [".q-table tbody tr >> nth=0 >> td >> nth=2 >> a >> nth=0"]}]
+  - [{shot: [".q-filters"]}]
+
+12-keeping-the-database-accurate:
+  - [{goto: /admin}, {shot: ["details:has(summary:text-is('Add Clause'))", ".panel:has(h2:text-is('Search Test'))"]}]
+  - [{goto: /admin/clauses/DECL_32_GARAGES}, {click: "summary:has-text('Edit This Clause')"}, {sleep: 300}, {shot: ["details:has(summary:has-text('Edit This Clause'))"]}]
+  - [{fill: ["details:has(summary:has-text('Edit This Clause')) textarea[name='plain_summary']", "Every Dwelling needs a garage that holds at least two full-size vehicles, attached or detached, with working overhead doors. A garage may not be used as living space."]}, {shot: ["details:has(summary:has-text('Edit This Clause')) textarea[name='plain_summary']", "details:has(summary:has-text('Edit This Clause')) button:has-text('Submit for Approval')"]}, {click: "details:has(summary:has-text('Edit This Clause')) button:has-text('Submit for Approval')"}, {wait: ".flash"}, {shot: [".flash"]}]
+  - [{shot: [".panel:has(h2:has-text('Pending'))"]}]
+  - [{shot: [".panel:has(h2:has-text('Pending'))", ".panel:has(h2:text-is('Change History'))"]}]
+  - [{goto: /admin/my-submissions}, {shot: ["table"]}]
+  - [{goto: /admin}, {shot: ["details:has(summary:text-is('Add Clause'))"]}, {fill: ["#test_query", "Can I keep chickens?"]}, {click: "button:has-text('Run Search Test')"}, {wait: ".panel:has(h2:text-is('Search Test Results'))"}, {shot: [".panel:has(h2:text-is('Search Test Results'))"]}]
+  - [{shot: [FULL]}]
+
+13-pending-queue:
+  - [{as: superuser}, {goto: /admin/pending}, {shot: ["a.nav-item[href$='/admin/pending']", ".pending-table"]}]
+  - [{as: superuser}, {shot: [".pending-table tbody tr >> nth=0"]}]
+  - [{as: superuser}, {click: "a:has-text('History')"}, {wait: ".pending-table"}, {shot: [".pending-table"]}]
+  - [{as: superuser}, {goto: /admin/pending}, {shot: ["a.nav-item[href$='/admin/pending']"]}]
+
+14-administration:
+  - [{goto: /admin/pending}, {shot: [".pending-table button:has-text('Approve') >> nth=0", ".pending-table details.reject-details >> nth=0"]}]
+  - [{goto: /admin/users}, {js: HIDE_REAL_USERS}, {shot: [".panel:has(h2:text-is('Add User'))", "#new_username", "#new_role"]}]
+  - [{js: HIDE_REAL_USERS}, {shot: [".panel:has(h2:text-is('Admin Users'))", ".panel:has(h2:text-is('Admin Users')) tbody tr >> visible=true >> nth=0"]}]
+  - [{goto: /admin/tags}, {shot: [".tag-table"]}]
+  - [{goto: "/admin/audit?who=dev-board"}, {shot: [".filter-bar", ".audit-table"]}]
+  - [{shot: [FULL]}]
