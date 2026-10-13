@@ -43,7 +43,7 @@ Each row shows the question, the answer, and the clauses the answer cited. The c
 *zoom: the Question & Answer column, then Cited Clauses*
 
 **3. Resident Questions**  
-This is the Board's best window into accuracy. If an answer is wrong, the usual cause is a clause whose summary or page is off, or a rule that was never captured. Open the cited clause, check it against the source, and fix it through the edit form, which the next video covers. If the documents themselves are the problem, raise a flag for the committee.
+This is the Board's best window into accuracy. If an answer is wrong, the usual cause is a clause whose summary or page is off, or a rule that was not captured. Open the cited clause, check it against the source, and fix it through the edit form, which the next video covers. If the documents themselves are the problem, raise a flag for the committee.
 *zoom: a cited clause link*
 
 **4. Resident Questions**  
