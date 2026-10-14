@@ -9,70 +9,70 @@ videos:
     audience: member
     minutes: 2
     pages: [admin_home]
-    drive_id: ""
+    drive_id: 1LurgX2lzbsUP4dvgPs4IApn-KCamCrZp
   - number: "01"
     title: Reading the governing documents
     audience: member
     minutes: 2
     pages: [admin_home, clause_detail]
-    drive_id: ""
+    drive_id: 1Ow34FFN9Zu6i8uc1aPzLWvVQ6iNyKNuo
   - number: "02"
     title: Asking a question
     audience: member
     minutes: 1
     pages: [admin_search]
-    drive_id: ""
+    drive_id: 15yd_U8itJgHkEYmih-B9kBoSrLpellwt
   - number: "03"
     title: The Revision Flags page
     audience: member
     minutes: 1
     pages: [admin_flags]
-    drive_id: ""
+    drive_id: 1FKOGo_PWOG1kCv5QtzccKPgbVhDIWBPn
   - number: "04"
     title: Working a flag, start to finish
     audience: member
     minutes: 2
     pages: [admin_flag_detail]
-    drive_id: ""
+    drive_id: 1ngMY-gKDGwg6Kpk_NG4PazOc_prA7l5i
   - number: "05"
     title: The Guide and the path to a vote
     audience: member
     minutes: 1
     pages: [member_guide]
-    drive_id: ""
+    drive_id: 1ChhcRLbu3--QUTSbZBxq1YoTILnswmN0
   - number: "06"
     title: Your account and email notifications
     audience: member
     minutes: 1
     pages: [admin_users]
-    drive_id: ""
+    drive_id: 163yplGR_d2FICydiXo8D20DKvu96K4d0
   - number: "10"
     title: Board Decisions
     audience: board
     minutes: 2
     pages: [admin_board]
-    drive_id: ""
+    drive_id: 16EL2vwIXWRg-_D5sFCnlO6UK-zAD8_L2
   - number: "11"
     title: Resident Questions
     audience: board
     minutes: 1
     pages: [admin_questions]
-    drive_id: ""
+    drive_id: 1CmnuINp3HwuC_IxbmgLkpTP7pp6tRGgK
   - number: "12"
     title: Keeping the clause database accurate
     audience: board
     minutes: 2
     pages: [my_submissions]
-    drive_id: ""
+    drive_id: 1pqbunfZ6A7jAlhrOUSMefY35pfDch0c6
   - number: "13"
     title: The Pending queue
     audience: board
     minutes: 1
     pages: [admin_pending]
-    drive_id: ""
+    drive_id: 1d6GOuz0xz8wL3_d6F0j7GJsDsduIzSKz
   - number: "14"
     title: Administration for superusers
     audience: superuser
     minutes: 2
     pages: [admin_audit, admin_tags]
-    drive_id: ""
+    drive_id: 15CfAf70a4ea3VLCFDZjyyUY_JIKUr7oW
