@@ -572,14 +572,24 @@ def cmd_render(only=None):
 
 
 def cmd_publish():
+    """OneDrive gets the captioned MP4s. Google Drive's player will not play an MP4 that
+    carries a subtitle track or 24 kHz mono audio (it spins forever), so a Drive-ready
+    copy is also written: same video, stereo 44.1 kHz audio, no embedded captions.
+    Captions on Drive come from the .vtt attached as a caption track."""
     out = BUILD / "out"
+    ready = ONEDRIVE / "3 Drive-ready (upload these to Google Drive)"
+    ready.mkdir(parents=True, exist_ok=True)
     for p in sorted(out.glob("*.mp4")):
         num = int(p.name.split(" ")[0])
         folder = ONEDRIVE / ("1 Committee members" if num < 10 else "2 Board and administration")
         folder.mkdir(parents=True, exist_ok=True)
         for f in (p, p.with_suffix(".vtt")):
             shutil.copy(f, folder / f.name)
-        log(f"published {folder.name}/{p.name}")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(p), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2", "-sn", "-movflags", "+faststart",
+                        str(ready / p.name)], check=True)
+        shutil.copy(p.with_suffix(".vtt"), ready / p.with_suffix(".vtt").name)
+        log(f"published {folder.name}/{p.name}  (+ Drive-ready copy)")
 
 
 def main(argv):

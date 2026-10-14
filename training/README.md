@@ -37,8 +37,10 @@ uv venv .venv --python 3.13 && uv pip install --python .venv/bin/python playwrig
 
 ## Links in the console
 
-`videos.yaml` is the one list. Put each MP4 in Google Drive under *Plantation Lakes - HOA Documents / Training videos*
+`videos.yaml` is the one list. Upload the **Drive-ready** copies (OneDrive `Training/3 Drive-ready`) to Google Drive under *Plantation Lakes - HOA Documents / Training videos*
 (folder shared as "anyone with the link can view"), paste its file id into `drive_id`, commit, push. The console then shows
 "Watch the video" under that page's title, lists it in Help & Reference and on the Guide, and keeps Board videos away from
 members. To update a video, upload the new MP4 as a new version of the existing Drive file (right-click → Manage versions)
 so the link stays the same. Captions on Drive: right-click the video → Manage caption tracks → upload the matching `.vtt`.
+
+Google Drive's player does not play the captioned MP4s (subtitle track + mono 24 kHz audio make it spin forever); `publish` writes Drive-ready copies without those, and captions go on as a caption track from the `.vtt`.
