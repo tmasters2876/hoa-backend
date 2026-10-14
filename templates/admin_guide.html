@@ -36,6 +36,18 @@
   .guide-md .mermaid g.subgraph:has([id^="flowchart-COMMUNITY-"]) > rect { fill: #f5f1fb !important; stroke: #c3b1e1 !important; }
 </style>
 
+  {% if training_videos and training_videos.all %}
+<div class="panel" style="margin-bottom:16px; max-width:860px;">
+  <h2 style="margin:0 0 6px; font-size:14px;">Prefer to watch?</h2>
+  <p class="muted" style="margin:0 0 8px; font-size:13px;">The same walkthrough as short videos, one per page. Every page also has a <strong>Watch the video</strong> link under its title. Captions can be switched on in the player.</p>
+  <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">
+    {% for v in training_videos.all %}
+    <li><a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.number }} · {{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="panel guide-md">
   {{ body | safe }}
 </div>

@@ -503,6 +503,49 @@ def index_redirect():
     return redirect(url_for("admin_home"))
 
 
+# ── Training videos (training/videos.yaml) ───────────────────────────────────
+# One list feeds the "Watch the video" strip under every page's top bar, the
+# Help & Reference section and the Guide. A video with no drive_id is not linked.
+_VIDEOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "training", "videos.yaml")
+_videos_cache: tuple[float, list] | None = None
+_VIDEO_AUDIENCE_RANK = {"member": 0, "board": 1, "superuser": 2}
+
+
+def load_training_videos() -> list[dict]:
+    global _videos_cache
+    try:
+        mtime = os.path.getmtime(_VIDEOS_FILE)
+    except OSError:
+        return []
+    if _videos_cache and _videos_cache[0] == mtime:
+        return _videos_cache[1]
+    try:
+        import yaml as _yaml
+        with open(_VIDEOS_FILE, encoding="utf-8") as f:
+            raw = (_yaml.safe_load(f) or {}).get("videos") or []
+    except Exception as e:
+        print(f"[videos] WARNING: could not read videos.yaml: {e}")
+        raw = []
+    out = []
+    for v in raw:
+        did = (v.get("drive_id") or "").strip()
+        out.append({
+            "number": str(v.get("number", "")), "title": v.get("title", ""), "audience": v.get("audience", "member"),
+            "minutes": int(v.get("minutes") or 0), "pages": list(v.get("pages") or []),
+            "url": f"https://drive.google.com/file/d/{did}/view" if did else None,
+        })
+    _videos_cache = (mtime, out)
+    return out
+
+
+def training_videos_for(role: str | None, endpoint: str | None = None) -> dict:
+    """{'all': videos this role may see (linked only), 'here': the ones for this page}."""
+    rank = _role_rank(role)
+    allowed = [v for v in load_training_videos() if v["url"] and _VIDEO_AUDIENCE_RANK.get(v["audience"], 0) <= rank]
+    here = [v for v in allowed if endpoint and endpoint in v["pages"]]
+    return {"all": allowed, "here": here}
+
+
 @app.context_processor
 def inject_superuser():
     pending_count = 0
@@ -559,6 +602,7 @@ def inject_superuser():
         "can_edit_db": rank >= ROLE_RANK["board"],
         "dev_mode": is_dev_mode(),
         "mail_enabled": mailer.enabled(),
+        "training_videos": training_videos_for(getattr(g, "role", None), request.endpoint) if session.get("logged_in") else {"all": [], "here": []},
     }
 
 

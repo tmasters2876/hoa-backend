@@ -34,3 +34,11 @@ uv venv .venv --python 3.13 && uv pip install --python .venv/bin/python playwrig
 - Each MP4 carries a switchable English caption track (mov_text); the same captions sit beside it as a `.vtt`.
 - An animated arrow pointer glides to each highlighted element as the narrator reaches it and taps on arrival (owner request); it slips off-screen on wide shots.
 - A changed screen means editing `capture.yaml`; changed words mean editing the script. Re-run `build.py all <video>`.
+
+## Links in the console
+
+`videos.yaml` is the one list. Put each MP4 in Google Drive under *Plantation Lakes - HOA Documents / Training videos*
+(folder shared as "anyone with the link can view"), paste its file id into `drive_id`, commit, push. The console then shows
+"Watch the video" under that page's title, lists it in Help & Reference and on the Guide, and keeps Board videos away from
+members. To update a video, upload the new MP4 as a new version of the existing Drive file (right-click → Manage versions)
+so the link stays the same. Captions on Drive: right-click the video → Manage caption tracks → upload the matching `.vtt`.

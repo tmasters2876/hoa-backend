@@ -9,3 +9,4 @@ bcrypt==5.0.0
 pdfplumber
 rapidfuzz
 markdown
+pyyaml

@@ -49,6 +49,17 @@
 <details class="panel help-panel">
   <summary>Help &amp; Reference</summary>
   <div class="help-content">
+    {% if training_videos and training_videos.all %}
+    <div class="help-section">
+      <h3>Training videos</h3>
+      <p>Short narrated walkthroughs, one per page, with captions you can switch on in the player. Every page also has a <strong>Watch the video</strong> link under its title.</p>
+      <ul>
+        {% for v in training_videos.all %}
+        <li><a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.number }} · {{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
     <div class="help-section">
       <h3>New here? Start with the Guide</h3>
       <p>The <a href="{{ url_for('member_guide') }}"><strong>Committee Member Guide</strong></a> (also <strong>Guide</strong> in the sidebar) walks through the whole workflow — review → flag → discuss → propose → Board approval → community vote — with a diagram. The sections below are the feature-by-feature reference.</p>

@@ -134,6 +134,14 @@ OpenAI TTS (voice `nova`, cheerful-professional style per owner); switchable cap
 **When a console page changes, update its `capture.yaml` entry (and the script if the words change) and rebuild that video.**
 See `training/README.md`.
 
+**Links in the console (Oct 2026):** `training/videos.yaml` maps each video to its title, audience, length, console pages and
+Google Drive file id (`https://drive.google.com/file/d/<id>/view`; Drive folder "Training videos" inside the HOA Documents
+folder, id `1J1t4YQn_zc3_IvL4ukNUe3ahnTs0JssN`). `load_training_videos()` + `training_videos_for(role, endpoint)` feed a
+"Watch the video" strip under every page's top bar (`admin_base.html`), a Training videos section at the top of Help &
+Reference, and a "Prefer to watch?" index on the Guide. Board/superuser videos never render for members. A video with an
+empty `drive_id` is not linked anywhere. A rebuilt video is uploaded to Drive as a new version of the same file ("Manage
+versions"), so its id and link never change. Tests: `tests/test_training_videos.py`.
+
 ## Supabase Tables
 
 ### clauses (~712 rows as of April 2026)

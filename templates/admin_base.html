@@ -233,6 +233,14 @@
         color: var(--muted);
       }
       .topbar-spacer { flex: 1; }
+      .watch-strip {
+        display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: flex-end;
+        padding: 6px 24px 0; font-size: 12.5px;
+      }
+      .watch-link { color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+      .watch-link:hover { text-decoration: underline; }
+      .watch-icon { font-size: 10px; display: inline-flex; width: 18px; height: 18px; border-radius: 50%; align-items: center; justify-content: center; background: var(--accent); color: #fff; }
+      .watch-min { color: var(--muted); }
 
       .stale-chip {
         display: flex;
@@ -1079,6 +1087,15 @@
 
         {# Topbar (each page overrides via block) #}
         {% block topbar %}{% endblock %}
+        {% if training_videos and training_videos.here %}
+        <div class="watch-strip">
+          {% for v in training_videos.here %}
+          <a href="{{ v.url }}" target="_blank" rel="noopener noreferrer" class="watch-link" title="Opens in Google Drive; captions can be switched on in the player">
+            <span class="watch-icon">&#9654;</span> Watch the video: {{ v.title }} <span class="watch-min">({{ v.minutes }} min)</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
 
         <div class="page-body">
           {# Flash messages #}

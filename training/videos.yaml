@@ -1,0 +1,78 @@
+# The training videos the console links to. One entry per video. `drive_id` is the
+# Google Drive file id of the MP4 in "Plantation Lakes - HOA Documents / Training videos";
+# a video with no drive_id is simply not linked yet. `pages` are the console endpoints
+# whose top bar shows "Watch the video" for it. Board-audience videos show only to
+# board-and-up accounts (THE LAW: members never see approval tooling).
+videos:
+  - number: "00"
+    title: Getting started
+    audience: member
+    minutes: 2
+    pages: [admin_home]
+    drive_id: ""
+  - number: "01"
+    title: Reading the governing documents
+    audience: member
+    minutes: 2
+    pages: [admin_home, clause_detail]
+    drive_id: ""
+  - number: "02"
+    title: Asking a question
+    audience: member
+    minutes: 1
+    pages: [admin_search]
+    drive_id: ""
+  - number: "03"
+    title: The Revision Flags page
+    audience: member
+    minutes: 1
+    pages: [admin_flags]
+    drive_id: ""
+  - number: "04"
+    title: Working a flag, start to finish
+    audience: member
+    minutes: 2
+    pages: [admin_flag_detail]
+    drive_id: ""
+  - number: "05"
+    title: The Guide and the path to a vote
+    audience: member
+    minutes: 1
+    pages: [member_guide]
+    drive_id: ""
+  - number: "06"
+    title: Your account and email notifications
+    audience: member
+    minutes: 1
+    pages: [admin_users]
+    drive_id: ""
+  - number: "10"
+    title: Board Decisions
+    audience: board
+    minutes: 2
+    pages: [admin_board]
+    drive_id: ""
+  - number: "11"
+    title: Resident Questions
+    audience: board
+    minutes: 1
+    pages: [admin_questions]
+    drive_id: ""
+  - number: "12"
+    title: Keeping the clause database accurate
+    audience: board
+    minutes: 2
+    pages: [my_submissions]
+    drive_id: ""
+  - number: "13"
+    title: The Pending queue
+    audience: board
+    minutes: 1
+    pages: [admin_pending]
+    drive_id: ""
+  - number: "14"
+    title: Administration for superusers
+    audience: superuser
+    minutes: 2
+    pages: [admin_audit, admin_tags]
+    drive_id: ""
