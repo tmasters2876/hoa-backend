@@ -520,8 +520,9 @@ def cmd_render(only=None):
                 span = 2.0 if seg["full"] else 1.5
                 move = 0 if start == tgt else min(int(FPS * span), int(nf * 0.5))
                 hold = max(1, nf - move)
-                show_hl = bool(seg["bbox"]) and not seg["full"] and tgt != full
-                point = bool(seg["bbox"]) and not seg["full"]           # pointer travels even when the zoom stays wide
+                big = bool(seg["bbox"]) and seg["bbox"][2] * seg["bbox"][3] > 0.45 * W * H   # a whole panel, not a control
+                show_hl = bool(seg["bbox"]) and not seg["full"]                 # outline even when the camera stays wide
+                point = bool(seg["bbox"]) and not seg["full"] and not big       # the pointer marks controls, not panels
                 travel = min(int(FPS * 1.2), max(move, int(nf * 0.35))) if point else 0
                 ptr_start = ptr if ptr else (OUT_W + 40, OUT_H * 0.75)
                 for f in range(nf):
