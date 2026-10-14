@@ -32,4 +32,5 @@ uv venv .venv --python 3.13 && uv pip install --python .venv/bin/python playwrig
 - Narration: OpenAI `gpt-4o-mini-tts`, voice `nova` with a bright, cheerful, professional style (owner: "bubbly and cheerful, but professional and helpful"). Cached by text, so only
   changed lines are re-voiced.
 - Each MP4 carries a switchable English caption track (mov_text); the same captions sit beside it as a `.vtt`.
+- An animated arrow pointer glides to each highlighted element as the narrator reaches it and taps on arrival (owner request); it slips off-screen on wide shots.
 - A changed screen means editing `capture.yaml`; changed words mean editing the script. Re-run `build.py all <video>`.

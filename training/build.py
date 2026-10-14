@@ -412,6 +412,52 @@ def drift(rect, W, H, u, amount=0.035):
     return (nx, ny, nw, nh)
 
 
+
+_CURSOR = [(0, 0), (0, 23), (5.5, 18), (9.5, 28), (13.5, 26), (9.5, 16.5), (16.5, 16.5)]   # classic arrow, tip at (0,0)
+
+
+def draw_pointer(fr: Image.Image, pos, scale: float = 1.0, ripple: float = 0.0) -> Image.Image:
+    """An arrow pointer with a soft shadow at `pos` (tip), optional click ripple (0..1)."""
+    S = 3                                              # supersample for clean edges
+    size = 200
+    ov = Image.new("RGBA", (size * S, size * S), (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    ox, oy = 60 * S, 60 * S                            # tip position inside the patch
+    k = 2.4 * S * scale
+    pts = [(ox + x * k, oy + y * k) for x, y in _CURSOR]
+    shadow = [(x + 3 * S, y + 4 * S) for x, y in pts]
+    od.polygon(shadow, fill=(0, 0, 0, 70))
+    od.polygon(pts, fill=(255, 255, 255, 255), outline=(20, 30, 24, 255), width=2 * S)
+    if ripple > 0:
+        r = (14 + 46 * ripple) * S
+        a = int(190 * (1 - ripple))
+        od.ellipse([ox - r, oy - r, ox + r, oy + r], outline=ACCENT + (a,), width=int(4 * S * (1 - ripple * 0.6)) + 1)
+    patch = ov.resize((size, size), Image.LANCZOS)
+    base = fr.convert("RGBA")
+    base.alpha_composite(patch, (int(pos[0] - 60), int(pos[1] - 60)))
+    return base.convert("RGB")
+
+
+def bbox_to_out(bbox, rect):
+    x, y, w, h = rect
+    sx, sy = OUT_W / w, OUT_H / h
+    return ((bbox[0] - x) * sx, (bbox[1] - y) * sy, bbox[2] * sx, bbox[3] * sy)
+
+
+def point_target(bbox, rect):
+    """Where the pointer tip rests: inside the element, a little in from the left, just below its vertical middle."""
+    bx, by, bw, bh = bbox_to_out(bbox, rect)
+    tx = bx + min(bw * 0.12, 48) + 10
+    ty = by + bh * 0.58
+    return (max(20, min(OUT_W - 40, tx)), max(20, min(OUT_H - 40, ty)))
+
+
+def lerp_pt(a, b, u):
+    # a slight arc so the pointer travels like a hand, not a slide
+    x = a[0] + (b[0] - a[0]) * u
+    y = a[1] + (b[1] - a[1]) * u - math.sin(math.pi * u) * 0.08 * abs(b[0] - a[0])
+    return (x, y)
+
 def render_frame(img: Image.Image, rect, bbox, glow: float) -> Image.Image:
     x, y, w, h = rect
     fr = img.resize((OUT_W, OUT_H), Image.BILINEAR, box=(x, y, x + w, y + h))
@@ -448,6 +494,8 @@ def cmd_render(only=None):
         prev_img_name, prev_rect = None, None
         cache: dict[str, Image.Image] = {}
         XFADE = int(FPS * 0.5)
+        ptr = None                       # pointer tip in output coords, or None when hidden
+        TAP = int(FPS * 0.45)
         for segs, dur in zip(segments, durs):
             nframes_scene = round(dur * FPS)
             per = [nframes_scene // len(segs)] * len(segs)
@@ -466,6 +514,9 @@ def cmd_render(only=None):
                 move = 0 if start == tgt else min(int(FPS * span), int(nf * 0.5))
                 hold = max(1, nf - move)
                 show_hl = bool(seg["bbox"]) and not seg["full"] and tgt != full
+                point = bool(seg["bbox"]) and not seg["full"]           # pointer travels even when the zoom stays wide
+                travel = min(int(FPS * 1.2), max(move, int(nf * 0.35))) if point else 0
+                ptr_start = ptr if ptr else (OUT_W + 40, OUT_H * 0.75)
                 for f in range(nf):
                     if f < move:
                         rect = lerp_rect(start, tgt, ease((f + 1) / move)); g = 0.0
@@ -476,6 +527,23 @@ def cmd_render(only=None):
                         if show_hl and nf - f < FPS * 0.4:          # let the outline go before the next move
                             g *= (nf - f) / (FPS * 0.4)
                     fr = render_frame(img, rect, seg["bbox"] if show_hl else None, g)
+                    if point:
+                        T = point_target(seg["bbox"], rect)
+                        if f < travel:
+                            ptr = lerp_pt(ptr_start, T, ease((f + 1) / travel)); sc, rip = 1.0, 0.0
+                        else:
+                            ptr = T
+                            k = f - travel
+                            sc = 1.0 - 0.18 * math.sin(math.pi * min(1.0, k / TAP)) if k < TAP else 1.0
+                            rip = min(1.0, k / TAP) if k < TAP else 0.0
+                        fr = draw_pointer(fr, ptr, sc, rip)
+                    elif ptr is not None:
+                        # no target on a wide shot: the pointer slips away to the lower right and hides
+                        k = min(1.0, (f + 1) / (FPS * 0.5))
+                        p2 = lerp_pt(ptr, (OUT_W + 60, OUT_H + 60), ease(k))
+                        fr = draw_pointer(fr, p2)
+                        if k >= 1.0:
+                            ptr = None
                     if f < fade:
                         fr = Image.blend(last, fr, ease((f + 1) / fade))
                     ff.stdin.write(fr.tobytes()); frames += 1
