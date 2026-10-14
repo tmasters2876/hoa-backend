@@ -96,7 +96,14 @@ def demo() -> dict:
 
 def session(role: str) -> requests.Session:
     s = requests.Session()
-    r = s.post(f"{BASE}/login", data={"username": ACCOUNTS[role], "password": DEV_PASSWORD}, allow_redirects=False)
+    for attempt in range(5):                       # the DEV console's reloader can be mid-restart
+        try:
+            r = s.post(f"{BASE}/login", data={"username": ACCOUNTS[role], "password": DEV_PASSWORD}, allow_redirects=False, timeout=30)
+            break
+        except requests.ConnectionError:
+            time.sleep(3)
+    else:
+        raise SystemExit("DEV console is not answering on 5052 — run dev/dev.sh run")
     assert r.status_code == 302 and "login" not in r.headers.get("Location", ""), f"login failed for {role}"
     return s
 
@@ -535,7 +542,10 @@ def cmd_render(only=None):
                             ptr = T
                             k = f - travel
                             sc = 1.0 - 0.18 * math.sin(math.pi * min(1.0, k / TAP)) if k < TAP else 1.0
-                            rip = min(1.0, k / TAP) if k < TAP else 0.0
+                            # beacon: a tap on arrival, then a soft pulse every couple of seconds while resting
+                            PERIOD = int(FPS * 2.2)
+                            kk = k % PERIOD
+                            rip = min(1.0, kk / TAP) if kk < TAP else 0.0
                         fr = draw_pointer(fr, ptr, sc, rip)
                     elif ptr is not None:
                         # no target on a wide shot: the pointer slips away to the lower right and hides
