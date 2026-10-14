@@ -14,11 +14,23 @@ os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 import admin_app
 from admin_app import app, training_videos_for
 
+MEDIA = "https://media.example/sign"
+
+
+def _v(number, title, audience, pages, minutes=1, url=True, drive=None):
+    return {"number": number, "title": title, "audience": audience, "minutes": minutes, "pages": pages,
+            "url": f"/admin/training/{number}" if url else None, "drive_url": drive}
+
+
+def _sign(number):
+    return f"{MEDIA}/{number}.mp4?token=t", f"{MEDIA}/{number}.vtt?token=t"
+
+
 VIDEOS = [
-    {"number": "03", "title": "The Revision Flags page", "audience": "member", "minutes": 1, "pages": ["admin_flags"], "url": "https://drive.google.com/file/d/abc/view"},
-    {"number": "13", "title": "The Pending queue", "audience": "board", "minutes": 1, "pages": ["admin_pending"], "url": "https://drive.google.com/file/d/def/view"},
-    {"number": "14", "title": "Administration for superusers", "audience": "superuser", "minutes": 2, "pages": ["admin_audit"], "url": "https://drive.google.com/file/d/ghi/view"},
-    {"number": "06", "title": "Not uploaded yet", "audience": "member", "minutes": 1, "pages": ["admin_users"], "url": None},
+    _v("03", "The Revision Flags page", "member", ["admin_flags"], drive="https://drive.google.com/file/d/abc/view"),
+    _v("13", "The Pending queue", "board", ["admin_pending"]),
+    _v("14", "Administration for superusers", "superuser", ["admin_audit"], minutes=2),
+    _v("06", "Not uploaded yet", "member", ["admin_users"], url=False),
 ]
 
 
@@ -60,7 +72,8 @@ def test_watch_strip_on_the_flags_page_for_a_member(client):
         s, l = session_as("member")
         with s, l:
             html = client.get("/admin/flags").get_data(as_text=True)
-    assert "Watch the video: The Revision Flags page" in html and "drive.google.com/file/d/abc/view" in html
+    assert "Watch the video: The Revision Flags page" in html and 'href="/admin/training/03"' in html
+    assert "drive.google.com" not in html  # the strip plays in the console, Drive is only an archive link on the player page
     assert "The Pending queue" not in html and "Administration for superusers" not in html
 
 
@@ -81,3 +94,55 @@ def test_real_registry_loads_and_every_page_exists():
     for v in vids:
         for pg in v["pages"]:
             assert pg in endpoints, f"{v['number']}: unknown endpoint {pg}"
+
+
+def test_player_page_streams_signed_urls_with_a_caption_track(client):
+    sb = _chainable()
+    with patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.load_training_videos", return_value=VIDEOS), \
+         patch("admin_app._training_media_urls", side_effect=_sign) as sign:
+        s, l = session_as("member")
+        with s, l:
+            html = client.get("/admin/training/03").get_data(as_text=True)
+    sign.assert_called_once_with("03")
+    assert f'src="{MEDIA}/03.mp4?token=t"' in html and f'<track id="train-cc" kind="captions" src="{MEDIA}/03.vtt?token=t"' in html
+    assert 'id="cc-toggle"' in html and "Also in Google Drive" in html and "drive.google.com/file/d/abc/view" in html
+    assert "The Pending queue" not in html  # the side list is role-filtered too
+
+
+def test_player_page_is_404_for_a_video_the_role_may_not_see(client):
+    sb = _chainable()
+    with patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.load_training_videos", return_value=VIDEOS), \
+         patch("admin_app._training_media_urls", side_effect=_sign) as sign:
+        s, l = session_as("member")
+        with s, l:
+            assert client.get("/admin/training/13").status_code == 404
+            assert client.get("/admin/training/99").status_code == 404
+        assert sign.call_count == 0  # no link is ever minted for a video the role may not see
+        s, l = session_as("board")
+        with s, l:
+            r = client.get("/admin/training/13")
+    assert r.status_code == 200 and f"{MEDIA}/13.mp4?token=t" in r.get_data(as_text=True)
+
+
+def test_player_page_degrades_when_the_bucket_is_unreachable(client):
+    sb = _chainable()
+    sb.storage.from_.return_value.create_signed_url.side_effect = RuntimeError("no bucket")
+    with patch("admin_app.get_supabase_client", return_value=sb), patch("admin_app.load_training_videos", return_value=VIDEOS):
+        s, l = session_as("member")
+        with s, l:
+            r = client.get("/admin/training/03")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and "not available right now" in html and 'src="' not in html.split('id="train-video"')[1][:200]
+
+
+def test_signed_urls_come_from_the_training_bucket():
+    sb = MagicMock()
+    sb.storage.from_.return_value.create_signed_url.side_effect = lambda path, secs: {"signedURL": f"https://x/{path}?s={secs}"}
+    with patch("admin_app.get_supabase_client", return_value=sb):
+        assert admin_app._training_media_urls("06") == ("https://x/06.mp4?s=3600", "https://x/06.vtt?s=3600")
+    sb.storage.from_.assert_called_with("training")
+
+
+def test_real_registry_links_every_video_to_its_player_page():
+    for v in admin_app.load_training_videos():
+        assert v["url"] == f"/admin/training/{v['number']}"

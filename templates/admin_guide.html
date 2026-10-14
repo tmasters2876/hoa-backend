@@ -39,10 +39,10 @@
   {% if training_videos and training_videos.all %}
 <div class="panel" style="margin-bottom:16px; max-width:860px;">
   <h2 style="margin:0 0 6px; font-size:14px;">Prefer to watch?</h2>
-  <p class="muted" style="margin:0 0 8px; font-size:13px;">The same walkthrough as short videos, one per page. Every page also has a <strong>Watch the video</strong> link under its title. Captions can be switched on in the player.</p>
+  <p class="muted" style="margin:0 0 8px; font-size:13px;">The same walkthrough as short videos, one per page, played right here in the console. Every page also has a <strong>Watch the video</strong> link under its title. Captions can be switched on under the video.</p>
   <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">
     {% for v in training_videos.all %}
-    <li><a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.number }} · {{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
+    <li><a href="{{ v.url }}">{{ v.number }} · {{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
     {% endfor %}
   </ul>
 </div>

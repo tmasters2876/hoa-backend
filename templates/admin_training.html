@@ -1,0 +1,85 @@
+{% extends "admin_base.html" %}
+
+{% block topbar %}
+<div class="topbar">
+  <span class="topbar-title">{% if video %}Training video {{ video.number }}{% else %}Training video{% endif %}</span>
+  <span class="topbar-sub">{% if video %}{{ video.title }} · {{ video.minutes }} min{% else %}not found{% endif %}</span>
+  <div class="topbar-spacer"></div>
+  <a href="{{ url_for('admin_home') }}" style="font-size:12px;font-weight:500;">← Back to Clauses</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .train-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .train-wrap { grid-template-columns: 1fr; } }
+  .train-player { background: #000; border-radius: var(--radius, 10px); overflow: hidden; }
+  .train-player video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  .train-player video::cue { background: rgba(0,0,0,0.72); color: #fff; font-size: 1.05rem; line-height: 1.35; }
+  .train-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 10px; font-size: 13px; }
+  .cc-btn { border: 1px solid var(--border); background: var(--surface, #fff); color: var(--text); border-radius: var(--radius-pill, 999px);
+            padding: 5px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .cc-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .train-list { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+  .train-list li { padding: 7px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+  .train-list li:last-child { border-bottom: none; }
+  .train-list .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 22px; }
+  .train-list li.current a { font-weight: 700; }
+</style>
+
+{% if not video %}
+<div class="panel"><p>That training video does not exist or is not available to your account.</p></div>
+{% else %}
+<div class="train-wrap">
+  <div>
+    <div class="panel" style="padding:12px;">
+      {% if not media_url %}
+      <p style="margin:4px 0 10px;">The video file is not available right now{% if dev_mode %} (the DEV sandbox has no video storage; the page itself is what you are testing){% endif %}. Please try again in a moment.</p>
+      {% endif %}
+      <div class="train-player">
+        <video id="train-video" controls preload="metadata" playsinline crossorigin="anonymous"{% if media_url %} src="{{ media_url }}"{% endif %}>
+          {% if captions_url %}<track id="train-cc" kind="captions" src="{{ captions_url }}" srclang="en" label="English">{% endif %}
+          Your browser cannot play this video.
+        </video>
+      </div>
+      <div class="train-bar">
+        <button type="button" class="cc-btn" id="cc-toggle" aria-pressed="false">Captions: off</button>
+        <span class="muted">{{ video.minutes }} min · narrated · press the button to switch captions on or off</span>
+        <span class="topbar-spacer"></span>
+        {% if video.drive_url %}<a href="{{ video.drive_url }}" target="_blank" rel="noopener noreferrer">Also in Google Drive</a>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2 style="margin:0 0 8px; font-size:14px;">All training videos</h2>
+    <ul class="train-list">
+      {% for v in videos %}
+      <li{% if v.number == video.number %} class="current"{% endif %}><span class="num">{{ v.number }}</span><a href="{{ v.url }}">{{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<script>
+(() => {
+  const video = document.getElementById("train-video");
+  const btn = document.getElementById("cc-toggle");
+  const KEY = "hoa.training.captions";
+  let pref = "off";
+  try { pref = localStorage.getItem(KEY) || "off"; } catch (e) {}
+  const track = () => (video.textTracks && video.textTracks.length) ? video.textTracks[0] : null;
+  const apply = (on) => {
+    const t = track();
+    if (t) t.mode = on ? "showing" : "hidden";
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.textContent = on ? "Captions: on" : "Captions: off";
+    try { localStorage.setItem(KEY, on ? "on" : "off"); } catch (e) {}
+  };
+  btn.addEventListener("click", () => apply(btn.getAttribute("aria-pressed") !== "true"));
+  const init = () => apply(pref === "on");
+  if (track()) init(); else video.addEventListener("loadedmetadata", init, { once: true });
+  setTimeout(init, 800);
+})();
+</script>
+{% endif %}
+{% endblock %}

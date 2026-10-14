@@ -134,13 +134,18 @@ OpenAI TTS (voice `nova`, cheerful-professional style per owner); switchable cap
 **When a console page changes, update its `capture.yaml` entry (and the script if the words change) and rebuild that video.**
 See `training/README.md`.
 
-**Links in the console (Oct 2026):** `training/videos.yaml` maps each video to its title, audience, length, console pages and
-Google Drive file id (`https://drive.google.com/file/d/<id>/view`; Drive folder "Training videos" inside the HOA Documents
-folder, id `1J1t4YQn_zc3_IvL4ukNUe3ahnTs0JssN`). `load_training_videos()` + `training_videos_for(role, endpoint)` feed a
+**Links in the console (Oct 2026):** `training/videos.yaml` maps each video to its title, audience, length, console pages
+and the Google Drive archive id. The videos play **in the console**: `GET /admin/training/<number>` (`admin_training.html`,
+`<video>` + `<track>` captions with a Captions button, role-gated like everything else) streams `<number>.mp4` /
+`<number>.vtt` from the **private** `training` bucket of this project's Supabase Storage through one-hour signed URLs
+minted per visit (`_training_media_urls`), so only a signed-in account of the right role ever gets a link; in DEV the
+local stack has no bucket and the page shows a "not available" notice. `build.py publish` writes the web copies
+(H.264 crf 23 capped at 2.5 Mb/s, ~7–31 MB each) and `build.py upload` pushes them; a rebuilt video replaces its object
+in place so nothing in the console changes. `load_training_videos()` + `training_videos_for(role, endpoint)` feed a
 "Watch the video" strip under every page's top bar (`admin_base.html`), a Training videos section at the top of Help &
-Reference, and a "Prefer to watch?" index on the Guide. Board/superuser videos never render for members. A video with an
-empty `drive_id` is not linked anywhere. A rebuilt video is uploaded to Drive as a new version of the same file ("Manage
-versions"), so its id and link never change. Tests: `tests/test_training_videos.py`.
+Reference, and a "Prefer to watch?" index on the Guide. Board/superuser videos never render for members. Google Drive's
+player never finished processing these files (2026-10-14), which is why the console hosts them; Drive keeps an archive
+copy linked as "Also in Google Drive". Tests: `tests/test_training_videos.py`.
 
 ## Supabase Tables
 

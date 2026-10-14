@@ -37,10 +37,23 @@ uv venv .venv --python 3.13 && uv pip install --python .venv/bin/python playwrig
 
 ## Links in the console
 
-`videos.yaml` is the one list. Upload the **Drive-ready** copies (OneDrive `Training/3 Drive-ready`) to Google Drive under *Plantation Lakes - HOA Documents / Training videos*
-(folder shared as "anyone with the link can view"), paste its file id into `drive_id`, commit, push. The console then shows
-"Watch the video" under that page's title, lists it in Help & Reference and on the Guide, and keeps Board videos away from
-members. To update a video, upload the new MP4 as a new version of the existing Drive file (right-click → Manage versions)
-so the link stays the same. Captions on Drive: right-click the video → Manage caption tracks → upload the matching `.vtt`.
+`videos.yaml` is the one list. The videos play **inside the console** (`/admin/training/<number>`, a `<video>` player
+with a Captions button) from the **private** `training` bucket of the console's Supabase project, where each lives as
+`<number>.mp4` + `<number>.vtt`. The page mints one-hour signed URLs per visit, so only a signed-in account of the
+right role ever receives a link (the Board set is a 404 for members, and no link is minted for it).
 
-Google Drive's player does not play the captioned MP4s (subtitle track + mono 24 kHz audio make it spin forever); `publish` writes Drive-ready copies without those, and captions go on as a caption track from the `.vtt`.
+```bash
+.venv/bin/python build.py publish         # OneDrive copies + web copies (crf 23, ≤2.5 Mb/s, stereo 44.1 kHz, no embedded captions)
+.venv/bin/python build.py upload          # push the web copies to the bucket (creates it, private, on first run)
+.venv/bin/python build.py upload 04       # one video — replaces 04.mp4 / 04.vtt in place, nothing in the console changes
+```
+
+`upload` reads the production `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `../.env`. The console shows "Watch the
+video" under each page's title and lists every video in Help & Reference and on the Guide. Captions are the `.vtt` as a
+`<track>`; the viewer's on/off choice is remembered in the browser. The DEV sandbox's local Supabase has no bucket, so
+there the player page renders with a "not available" notice — the page is testable, the stream is not.
+
+Google Drive is the archive: the web copies also go to *Plantation Lakes - HOA Documents / Training videos* and the
+file id goes in `drive_id`, which the player page shows as "Also in Google Drive". Drive's own player never finished
+processing these files (2026-10-14), which is why the console hosts them. The Supabase org is on the Pro plan
+(100 GB storage included); the twelve web copies total ~200 MB.

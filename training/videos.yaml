@@ -1,8 +1,11 @@
-# The training videos the console links to. One entry per video. `drive_id` is the
-# Google Drive file id of the MP4 in "Plantation Lakes - HOA Documents / Training videos";
-# a video with no drive_id is simply not linked yet. `pages` are the console endpoints
-# whose top bar shows "Watch the video" for it. Board-audience videos show only to
-# board-and-up accounts (THE LAW: members never see approval tooling).
+# The training videos the console links to. One entry per video. Each plays on its own
+# console page (/admin/training/<number>) from the `training` bucket of the console's
+# Supabase project, where it lives as <number>.mp4 + <number>.vtt (uploaded by
+# `training/build.py upload`). `drive_id` is the Google Drive file id of the archive copy in
+# "Plantation Lakes - HOA Documents / Training videos" (shown as "Also in Google Drive").
+# `pages` are the console endpoints whose top bar shows "Watch the video" for it.
+# Board-audience videos show only to board-and-up accounts (THE LAW: members never see
+# approval tooling). Remove an entry to unlink a video.
 videos:
   - number: "00"
     title: Getting started

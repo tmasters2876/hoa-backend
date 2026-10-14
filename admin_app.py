@@ -505,10 +505,27 @@ def index_redirect():
 
 # ── Training videos (training/videos.yaml) ───────────────────────────────────
 # One list feeds the "Watch the video" strip under every page's top bar, the
-# Help & Reference section and the Guide. A video with no drive_id is not linked.
+# Help & Reference section and the Guide. Each video plays on its own console page
+# (/admin/training/<number>) from the PRIVATE `training` bucket of the console's
+# Supabase project (<number>.mp4 + <number>.vtt captions) through one-hour signed
+# URLs minted per visit, so only a signed-in account of the right role ever gets a link.
 _VIDEOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "training", "videos.yaml")
 _videos_cache: tuple[float, list] | None = None
 _VIDEO_AUDIENCE_RANK = {"member": 0, "board": 1, "superuser": 2}
+TRAINING_BUCKET = "training"
+TRAINING_URL_SECONDS = 3600
+
+
+def _training_media_urls(number: str) -> tuple[str | None, str | None]:
+    """Signed (video, captions) URLs for one video, or (None, None) when the bucket is
+    unreachable — the DEV sandbox's local Supabase has no training bucket."""
+    try:
+        bucket = supabase().storage.from_(TRAINING_BUCKET)
+        return (bucket.create_signed_url(f"{number}.mp4", TRAINING_URL_SECONDS)["signedURL"],
+                bucket.create_signed_url(f"{number}.vtt", TRAINING_URL_SECONDS)["signedURL"])
+    except Exception as e:
+        print(f"[videos] WARNING: could not sign URLs for {number}: {e}")
+        return None, None
 
 
 def load_training_videos() -> list[dict]:
@@ -528,11 +545,13 @@ def load_training_videos() -> list[dict]:
         raw = []
     out = []
     for v in raw:
+        num = str(v.get("number", "")).strip()
         did = (v.get("drive_id") or "").strip()
         out.append({
-            "number": str(v.get("number", "")), "title": v.get("title", ""), "audience": v.get("audience", "member"),
+            "number": num, "title": v.get("title", ""), "audience": v.get("audience", "member"),
             "minutes": int(v.get("minutes") or 0), "pages": list(v.get("pages") or []),
-            "url": f"https://drive.google.com/file/d/{did}/view" if did else None,
+            "url": f"/admin/training/{num}" if num else None,
+            "drive_url": f"https://drive.google.com/file/d/{did}/view" if did else None,
         })
     _videos_cache = (mtime, out)
     return out
@@ -544,6 +563,19 @@ def training_videos_for(role: str | None, endpoint: str | None = None) -> dict:
     allowed = [v for v in load_training_videos() if v["url"] and _VIDEO_AUDIENCE_RANK.get(v["audience"], 0) <= rank]
     here = [v for v in allowed if endpoint and endpoint in v["pages"]]
     return {"all": allowed, "here": here}
+
+
+@app.get("/admin/training/<number>")
+@login_required
+def admin_training(number):
+    """The console's own player for one training video (captions switchable). A video
+    the role may not see (Board set for a member) is a 404, same as the strip and Help."""
+    allowed = training_videos_for(getattr(g, "role", None))["all"]
+    video = next((v for v in allowed if v["number"] == number), None)
+    if not video:
+        return render_template("admin_training.html", video=None, videos=allowed), 404
+    media_url, captions_url = _training_media_urls(number)
+    return render_template("admin_training.html", video=video, videos=allowed, media_url=media_url, captions_url=captions_url)
 
 
 @app.context_processor

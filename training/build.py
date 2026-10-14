@@ -5,7 +5,8 @@
     .venv/bin/python build.py capture [v…]   # browser walk-through, screenshots per zoom
     .venv/bin/python build.py voice [v…]     # narration (American female) + captions
     .venv/bin/python build.py render [v…]    # zooms, highlights, title card → MP4 + VTT
-    .venv/bin/python build.py publish        # copy MP4 + VTT to OneDrive/…/Training
+    .venv/bin/python build.py publish        # copy MP4 + VTT to OneDrive/…/Training, write web copies
+    .venv/bin/python build.py upload [v…]    # push the web copies to the console's Supabase bucket
     .venv/bin/python build.py cleanup        # remove the demo data from DEV
 
 Runs only against the local DEV console (http://127.0.0.1:5052). The scripts are the
@@ -571,25 +572,58 @@ def cmd_render(only=None):
         log(f"rendered {mp4.name}  {frames / FPS:.0f}s")
 
 
-def cmd_publish():
-    """OneDrive gets the captioned MP4s. Google Drive's player will not play an MP4 that
-    carries a subtitle track or 24 kHz mono audio (it spins forever), so a Drive-ready
-    copy is also written: same video, stereo 44.1 kHz audio, no embedded captions.
-    Captions on Drive come from the .vtt attached as a caption track."""
+WEB_DIR = "3 Web copies (console + Google Drive)"
+BUCKET = "training"
+
+
+def cmd_publish(only=None):
+    """OneDrive gets the captioned MP4s. A web copy is also written for the console's own
+    player (and for Google Drive): re-encoded at the H.264 default quality with a 2.5 Mb/s
+    cap so every file stays under Supabase's 50 MB free-tier limit, stereo 44.1 kHz audio,
+    no embedded captions (the .vtt beside it is the caption track)."""
     out = BUILD / "out"
-    ready = ONEDRIVE / "3 Drive-ready (upload these to Google Drive)"
-    ready.mkdir(parents=True, exist_ok=True)
+    web = ONEDRIVE / WEB_DIR
+    web.mkdir(parents=True, exist_ok=True)
     for p in sorted(out.glob("*.mp4")):
-        num = int(p.name.split(" ")[0])
-        folder = ONEDRIVE / ("1 Committee members" if num < 10 else "2 Board and administration")
+        num = p.name.split(" ")[0]
+        if only and num not in only:
+            continue
+        folder = ONEDRIVE / ("1 Committee members" if int(num) < 10 else "2 Board and administration")
         folder.mkdir(parents=True, exist_ok=True)
         for f in (p, p.with_suffix(".vtt")):
             shutil.copy(f, folder / f.name)
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(p), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-                        "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2", "-sn", "-movflags", "+faststart",
-                        str(ready / p.name)], check=True)
-        shutil.copy(p.with_suffix(".vtt"), ready / p.with_suffix(".vtt").name)
-        log(f"published {folder.name}/{p.name}  (+ Drive-ready copy)")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(p), "-map", "0:v", "-map", "0:a",
+                        "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "2500k", "-bufsize", "5000k",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2", "-sn",
+                        "-movflags", "+faststart", str(web / p.name)], check=True)
+        shutil.copy(p.with_suffix(".vtt"), web / p.with_suffix(".vtt").name)
+        mb = (web / p.name).stat().st_size / 1048576
+        log(f"published {folder.name}/{p.name}  (+ web copy, {mb:.1f} MB)")
+
+
+def cmd_upload(only=None):
+    """Push the web copies to the private `training` bucket of the console's Supabase
+    project; the console's player streams them through one-hour signed URLs it mints for
+    signed-in accounts. Objects are named by video number — 06.mp4 / 06.vtt — so a rebuilt
+    video simply replaces its object and nothing in the console changes."""
+    from supabase import create_client
+    env = dotenv_values(REPO / ".env")
+    url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SERVICE_ROLE_KEY")
+    assert url and key and "supabase.co" in url, "upload needs the production SUPABASE_URL/SERVICE_ROLE_KEY in ../.env"
+    sb = create_client(url, key)
+    if BUCKET not in {b.name for b in sb.storage.list_buckets()}:
+        sb.storage.create_bucket(BUCKET, options={"public": False, "allowed_mime_types": ["video/mp4", "text/vtt"]})
+        log(f"created private bucket {BUCKET}")
+    bucket = sb.storage.from_(BUCKET)
+    web = ONEDRIVE / WEB_DIR
+    for p in sorted(web.glob("*.mp4")):
+        num = p.name.split(" ")[0]
+        if only and num not in only:
+            continue
+        for f, mime in ((p, "video/mp4"), (p.with_suffix(".vtt"), "text/vtt")):
+            key_name = f"{num}{f.suffix}"
+            bucket.upload(key_name, f.read_bytes(), {"content-type": mime, "cache-control": "86400", "upsert": "true"})
+            log(f"uploaded {key_name}  ← {f.name}  ({f.stat().st_size / 1048576:.1f} MB)")
 
 
 def main(argv):
@@ -600,7 +634,8 @@ def main(argv):
     elif cmd == "capture": cmd_capture(only)
     elif cmd == "voice": cmd_voice(only)
     elif cmd == "render": cmd_render(only)
-    elif cmd == "publish": cmd_publish()
+    elif cmd == "publish": cmd_publish(only)
+    elif cmd == "upload": cmd_upload(only)
     elif cmd == "all":
         cmd_setup(); cmd_capture(only); cmd_voice(only); cmd_render(only)
     else:

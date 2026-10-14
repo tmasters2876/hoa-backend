@@ -1090,7 +1090,7 @@
         {% if training_videos and training_videos.here %}
         <div class="watch-strip">
           {% for v in training_videos.here %}
-          <a href="{{ v.url }}" target="_blank" rel="noopener noreferrer" class="watch-link" title="Opens in Google Drive; captions can be switched on in the player">
+          <a href="{{ v.url }}" class="watch-link" title="Plays in the console; captions can be switched on in the player">
             <span class="watch-icon">&#9654;</span> Watch the video: {{ v.title }} <span class="watch-min">({{ v.minutes }} min)</span>
           </a>
           {% endfor %}

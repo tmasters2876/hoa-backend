@@ -52,10 +52,10 @@
     {% if training_videos and training_videos.all %}
     <div class="help-section">
       <h3>Training videos</h3>
-      <p>Short narrated walkthroughs, one per page, with captions you can switch on in the player. Every page also has a <strong>Watch the video</strong> link under its title.</p>
+      <p>Short narrated walkthroughs, one per page, played right here in the console with a <strong>Captions</strong> button under the video. Every page also has a <strong>Watch the video</strong> link under its title.</p>
       <ul>
         {% for v in training_videos.all %}
-        <li><a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.number }} · {{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
+        <li><a href="{{ v.url }}">{{ v.number }} · {{ v.title }}</a> <span class="muted">({{ v.minutes }} min)</span></li>
         {% endfor %}
       </ul>
     </div>
